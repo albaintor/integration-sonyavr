@@ -29,20 +29,20 @@ _configured_avrs: dict[str, avr.SonyDevice] = {}
 _R2_IN_STANDBY = False
 
 
-async def receiver_status_poller(interval: float = 10.0) -> None:
-    """Receiver data poller."""
-    while True:
-        await asyncio.sleep(interval)
-        if _R2_IN_STANDBY:
-            continue
-        try:
-            for receiver in _configured_avrs.values():
-                if not receiver.active:
-                    continue
-                # TODO #20  run in parallel, join, adjust interval duration based on execution time for next update
-                await receiver.async_update_receiver_data()
-        except (KeyError, ValueError):  # TODO check parallel access / modification while iterating a dict
-            pass
+# async def receiver_status_poller(interval: float = 10.0) -> None:
+#     """Receiver data poller."""
+#     while True:
+#         await asyncio.sleep(interval)
+#         if _R2_IN_STANDBY:
+#             continue
+#         try:
+#             for receiver in _configured_avrs.values():
+#                 if not receiver.active:
+#                     continue
+#                 # TODO #20  run in parallel, join, adjust interval duration based on execution time for next update
+#                 await receiver.async_update_receiver_data()
+#         except (KeyError, ValueError):  # TODO check parallel access / modification while iterating a dict
+#             pass
 
 
 @api.listens_to(ucapi.Events.CONNECT)
@@ -52,7 +52,9 @@ async def on_r2_connect_cmd() -> None:
     _LOG.debug("R2 connect command: connecting device(s)")
     for receiver in _configured_avrs.values():
         # start background task
-        _LOOP.create_task(receiver.connect())
+        await receiver.connect()
+        await receiver.async_activate_websocket()
+        # _LOOP.create_task(receiver.connect())
 
 
 @api.listens_to(ucapi.Events.DISCONNECT)
@@ -60,7 +62,8 @@ async def on_r2_disconnect_cmd():
     """Disconnect all configured receivers when the Remote Two sends the disconnect command."""
     for receiver in _configured_avrs.values():
         # start background task
-        _LOOP.create_task(receiver.disconnect())
+        await receiver.disconnect()
+        # _LOOP.create_task(receiver.disconnect())
 
 
 @api.listens_to(ucapi.Events.ENTER_STANDBY)
@@ -68,7 +71,7 @@ async def on_r2_enter_standby() -> None:
     """
     Enter standby notification from Remote Two.
 
-    Disconnect every Denon AVR instances.
+    Disconnect every Sony AVR instances.
     """
     global _R2_IN_STANDBY
 
@@ -83,7 +86,7 @@ async def on_r2_exit_standby() -> None:
     """
     Exit standby notification from Remote Two.
 
-    Connect all Denon AVR instances.
+    Connect all Sony AVR instances.
     """
     global _R2_IN_STANDBY
 
@@ -92,7 +95,9 @@ async def on_r2_exit_standby() -> None:
 
     for configured in _configured_avrs.values():
         # start background task
-        _LOOP.create_task(configured.connect())
+        await configured.connect()
+        await configured.async_activate_websocket()
+        # _LOOP.create_task(configured.connect())
 
 
 @api.listens_to(ucapi.Events.SUBSCRIBE_ENTITIES)
@@ -286,13 +291,14 @@ def _configure_new_avr(device: config.AvrDevice, connect: bool = True) -> None:
         receiver.events.on(avr.Events.DISCONNECTED, on_avr_disconnected)
         receiver.events.on(avr.Events.ERROR, on_avr_connection_error)
         receiver.events.on(avr.Events.UPDATE, on_avr_update)
-        receiver.events.on(avr.Events.IP_ADDRESS_CHANGED, handle_avr_address_change)
-
+        # receiver.events.on(avr.Events.IP_ADDRESS_CHANGED, handle_avr_address_change)
+        # receiver.connect()
         _configured_avrs[device.id] = receiver
 
     if connect:
         # start background connection task
-        _LOOP.create_task(receiver.connect())
+        # _LOOP.create_task(receiver.connect())
+        receiver.async_activate_websocket()
 
     _register_available_entities(device, receiver)
 
@@ -348,9 +354,6 @@ async def main():
     logging.basicConfig()
 
     level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
-    logging.getLogger("denonavr.ssdp").setLevel(level)
-    # TODO there must be a simpler way to set the same log level of all modules in the same parent module
-    #      (or how is that called in Python?)
     logging.getLogger("avr").setLevel(level)
     logging.getLogger("discover").setLevel(level)
     logging.getLogger("driver").setLevel(level)
@@ -362,7 +365,12 @@ async def main():
     for device in config.devices.all():
         _configure_new_avr(device, connect=False)
 
-    _LOOP.create_task(receiver_status_poller())
+    # _LOOP.create_task(receiver_status_poller())
+    for receiver in _configured_avrs.values():
+        if not receiver.active:
+            continue
+        await receiver.connect()
+        await receiver.async_activate_websocket()
 
     await api.init("driver.json", setup_flow.driver_setup_handler)
 

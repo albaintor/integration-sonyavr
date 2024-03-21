@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/integration-denonavr.iml" filepath="$PROJECT_DIR$/.idea/integration-denonavr.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/integration-sonyavr.iml" filepath="$PROJECT_DIR$/.idea/integration-sonyavr.iml" />
     </modules>
   </component>
 </project>

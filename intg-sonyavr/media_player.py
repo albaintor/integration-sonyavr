@@ -21,6 +21,7 @@ _LOG = logging.getLogger(__name__)
 MEDIA_PLAYER_STATE_MAPPING = {
     avr.States.ON: States.ON,
     avr.States.OFF: States.OFF,
+    avr.States.STOPPED: States.ON,
     avr.States.PAUSED: States.PAUSED,
     avr.States.PLAYING: States.PLAYING,
     avr.States.UNAVAILABLE: States.UNAVAILABLE,
@@ -31,18 +32,26 @@ MEDIA_PLAYER_STATE_MAPPING = {
 class SonyMediaPlayer(MediaPlayer):
     """Representation of a Sony Media Player entity."""
 
-    def __init__(self, device: AvrDevice, receiver: Device):
+    def __init__(self, device: AvrDevice, receiver: avr.SonyDevice):
         """Initialize the class."""
-        self._receiver: Device = receiver
+        self._receiver: avr.SonyDevice = receiver
 
-        entity_id = create_entity_id(receiver.id, EntityTypes.MEDIA_PLAYER)
+        entity_id = create_entity_id(device.id, EntityTypes.MEDIA_PLAYER)
         features = [
             Features.ON_OFF,
             Features.VOLUME,
             Features.VOLUME_UP_DOWN,
             Features.MUTE_TOGGLE,
             Features.SELECT_SOURCE,
-            Features.SELECT_SOUND_MODE
+            Features.SELECT_SOUND_MODE,
+            Features.MEDIA_ALBUM,
+            Features.MEDIA_TITLE,
+            Features.MEDIA_ARTIST,
+            Features.MEDIA_IMAGE_URL,
+            Features.MEDIA_TYPE,
+            Features.NEXT,
+            Features.PREVIOUS,
+            Features.PLAY_PAUSE,
         ]
         attributes = {
             Attributes.STATE: States.UNAVAILABLE,
@@ -51,13 +60,17 @@ class SonyMediaPlayer(MediaPlayer):
             Attributes.SOURCE: "",
             Attributes.SOURCE_LIST: [],
             Attributes.SOUND_MODE: "",
-            Attributes.SOUND_MODE_LIST: []
+            Attributes.SOUND_MODE_LIST: [],
+            Attributes.MEDIA_IMAGE_URL: "",
+            Attributes.MEDIA_TITLE: "",
+            Attributes.MEDIA_ARTIST: "",
+            Attributes.MEDIA_ALBUM: "",
         }
-        # use sound mode support & name from configuration: receiver might not yet be connected
-        if device.support_sound_mode:
-            features.append(Features.SELECT_SOUND_MODE)
-            attributes[Attributes.SOUND_MODE] = ""
-            attributes[Attributes.SOUND_MODE_LIST] = []
+        # # use sound mode support & name from configuration: receiver might not yet be connected
+        # if device.support_sound_mode:
+        #     features.append(Features.SELECT_SOUND_MODE)
+        #     attributes[Attributes.SOUND_MODE] = ""
+        #     attributes[Attributes.SOUND_MODE_LIST] = []
 
         super().__init__(
             entity_id,
@@ -84,7 +97,7 @@ class SonyMediaPlayer(MediaPlayer):
             return StatusCodes.SERVICE_UNAVAILABLE
 
         if cmd_id == Commands.VOLUME:
-            res = await self._receiver.v set_volume_level(params.get("volume"))
+            res = await self._receiver.set_volume_level(params.get("volume"))
         elif cmd_id == Commands.VOLUME_UP:
             res = await self._receiver.volume_up()
         elif cmd_id == Commands.VOLUME_DOWN:
@@ -99,26 +112,12 @@ class SonyMediaPlayer(MediaPlayer):
             res = await self._receiver.select_source(params.get("source"))
         elif cmd_id == Commands.SELECT_SOUND_MODE:
             res = await self._receiver.select_sound_mode(params.get("mode"))
-        elif cmd_id == Commands.CURSOR_UP:
-            res = await self._receiver.cursor_up()
-        elif cmd_id == Commands.CURSOR_DOWN:
-            res = await self._receiver.cursor_down()
-        elif cmd_id == Commands.CURSOR_LEFT:
-            res = await self._receiver.cursor_left()
-        elif cmd_id == Commands.CURSOR_RIGHT:
-            res = await self._receiver.cursor_right()
-        elif cmd_id == Commands.CURSOR_ENTER:
-            res = await self._receiver.cursor_enter()
-        elif cmd_id == Commands.BACK:
-            res = await self._receiver.back()
-        elif cmd_id == Commands.SETTINGS:
-            res = await self._receiver.setup()
-        elif cmd_id == Commands.MENU:
-            res = await self._receiver.setup()
-        elif cmd_id == Commands.CONTEXT_MENU:
-            res = await self._receiver.options()
-        elif cmd_id == Commands.INFO:
-            res = await self._receiver.info()
+        elif cmd_id == Commands.NEXT:
+            res = await self._receiver.next()
+        elif cmd_id == Commands.PREVIOUS:
+            res = await self._receiver.previous()
+        elif cmd_id == Commands.PLAY_PAUSE:
+            res = await self._receiver.play_pause()
         else:
             return StatusCodes.NOT_IMPLEMENTED
 
@@ -143,6 +142,7 @@ class SonyMediaPlayer(MediaPlayer):
             Attributes.MEDIA_IMAGE_URL,
             Attributes.MEDIA_TITLE,
             Attributes.MUTED,
+            Attributes.SOURCE,
             Attributes.SOURCE,
             Attributes.VOLUME,
         ]:

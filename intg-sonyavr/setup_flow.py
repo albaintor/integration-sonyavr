@@ -40,24 +40,25 @@ class SetupSteps(IntEnum):
 _setup_step = SetupSteps.INIT
 _cfg_add_device: bool = False
 _user_input_discovery = RequestUserInput(
-        {"en": "Setup mode", "de": "Setup Modus"},
-        [
-            {"field": {"text": {"value": ""}}, "id": "address", "label": {"en": "IP address", "de": "IP-Adresse"}},
-            {
-                "id": "info",
-                "label": {"en": ""},
-                "field": {
-                    "label": {
-                        "value": {
-                            "en": "Leave blank to use auto-discovery.",
-                            "de": "Leer lassen, um automatische Erkennung zu verwenden.",
-                            "fr": "Laissez le champ vide pour utiliser la découverte automatique.",
-                        }
+    {"en": "Setup mode", "de": "Setup Modus"},
+    [
+        {"field": {"text": {"value": ""}}, "id": "address", "label": {"en": "Endpoint", "de": "IP-Adresse", "fr": "Adresse"}},
+        {
+            "id": "info",
+            "label": {"en": ""},
+            "field": {
+                "label": {
+                    "value": {
+                        "en": "Leave blank to use auto-discovery. Otherwise expected format : http://<ip address>:10000/sony",
+                        "de": "Leer lassen, um automatische Erkennung zu verwenden. Ansonsten ist das erwartete format : http://<ip address>:10000/sony",
+                        "fr": "Laissez le champ vide pour utiliser la découverte automatique. Sinon format attendu : http://<ip address>:10000/sony",
                     }
-                },
+                }
             },
-        ],
-    )
+        },
+    ],
+)
+
 
 async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
     """
@@ -223,6 +224,7 @@ async def handle_configuration_mode(msg: UserDataResponse) -> RequestUserInput |
     _setup_step = SetupSteps.DISCOVER
     return _user_input_discovery
 
+
 async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupError:
     """
     Process user data response in a setup process.
@@ -247,9 +249,7 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
             device = Device(address)
             await device.get_supported_methods()
             interface_info = await device.get_interface_information()
-            dropdown_items.append(
-                {"id": address, "label": {"en": f"{interface_info.modelName} [{address}]"}}
-            )
+            dropdown_items.append({"id": address, "label": {"en": f"{interface_info.modelName} [{address}]"}})
         except SongpalException as ex:
             _LOG.error("Cannot connect to manually entered address %s: %s", address, ex)
             return SetupError(error_type=IntegrationSetupError.CONNECTION_REFUSED)
@@ -305,7 +305,9 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     assert device
     assert system_info
 
-    unique_id = system_info.macAddr
+    unique_id = system_info.serialNumber
+    if unique_id is None:
+        unique_id = system_info.macAddr
     if unique_id is None:
         unique_id = system_info.wirelessMacAddr
 
@@ -313,12 +315,14 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
         _LOG.error("Could not get mac address of host %s: required to create a unique device", host)
         return SetupError(error_type=IntegrationSetupError.OTHER)
 
-    config.devices.add(AvrDevice(id=unique_id, name=interface_info.modelName, address=host))  # triggers SonyAVR instance creation
+    config.devices.add(
+        AvrDevice(id=unique_id, name=interface_info.modelName, address=host)
+    )  # triggers SonyAVR instance creation
     config.devices.store()
 
     # AVR device connection will be triggered with subscribe_entities request
 
     await asyncio.sleep(1)
 
-    _LOG.info("Setup successfully completed for %s", interface_info.modelName)
+    _LOG.info("Setup successfully completed for %s (%s)", interface_info.modelName, unique_id)
     return SetupComplete()

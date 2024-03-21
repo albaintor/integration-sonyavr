@@ -1,5 +1,5 @@
 """
-Denon AVR device discovery with SSDP.
+Sony AVR device discovery with SSDP.
 
 :copyright: (c) 2023 by Unfolded Circle ApS.
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
@@ -13,6 +13,7 @@ _LOG = logging.getLogger(__name__)
 
 TIMEOUT = 5
 _found_devices: list[DiscoveredDevice] = []
+
 
 async def sony_avrs() -> list[DiscoveredDevice]:
     """
@@ -33,11 +34,7 @@ async def sony_avrs() -> list[DiscoveredDevice]:
     try:
         _LOG.debug("Starting discovery")
         _found_devices = []
-        await Discover.discover(
-            TIMEOUT,
-            _LOG.level,
-            callback=discovered_devices
-            )
+        await Discover.discover(TIMEOUT, _LOG.level, callback=discovered_devices)
         return _found_devices
     except Exception as ex:  # pylint: disable=broad-exception-caught
         _LOG.error("Failed to start discovery: %s", ex)
