@@ -256,6 +256,7 @@ async def on_avr_update(avr_id: str, update: dict[str, Any] | None) -> None:
             attributes = configured_entity.filter_changed_attributes(update)
 
         if attributes:
+            # _LOG.debug("Sony AVR send updated attributes %s %s", entity_id, attributes)
             api.configured_entities.update_attributes(entity_id, attributes)
 
 

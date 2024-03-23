@@ -110,9 +110,15 @@ class SonyDevice:
 
         async def _volume_changed(volume: VolumeChange):
             _LOG.debug("Sony AVR volume changed: %s", volume)
-            self._volume = volume.volume
-            self._attr_is_volume_muted = volume.mute
-            self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
+            attr_changed = {}
+            if self._volume != volume.volume:
+                self._volume = volume.volume
+                attr_changed[MediaAttr.VOLUME] = self._volume
+            if self._attr_is_volume_muted != volume.mute:
+                self._attr_is_volume_muted = volume.mute
+                attr_changed[MediaAttr.MUTED] = self._attr_is_volume_muted
+            if attr_changed:
+                self.events.emit(Events.UPDATE, self.id, attr_changed)
 
         async def _source_changed(content: ContentChange):
             _LOG.debug("Sony AVR Source changed: %s", content)
