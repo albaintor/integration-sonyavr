@@ -3,7 +3,7 @@
 Using [python-songpal](https://github.com/rytilahti/python-songpal)
 and [uc-integration-api](https://github.com/aitatoi/integration-python-library)
 
-The driver discovers Denon or Marantz AVRs on the network. A media player entity is exposed to the core.
+The driver discovers Sony AVRs on the network. A media player entity is exposed to the core.
 
 Supported attributes:
 
@@ -22,7 +22,7 @@ Supported commands:
 - Previous
 - Volume up
 - Volume down
-- Play/pause
+- Pause (unfortunately resume to play is not supported by the library...)
 - Source select
 
 ## Usage
@@ -40,7 +40,7 @@ pip3 install -r requirements.txt
 For running a separate integration driver on your network for Remote Two, the configuration in file
 [driver.json](driver.json) needs to be changed:
 
-- Set `driver_id` to a unique value, `uc_denon_driver` is already used for the embedded driver in the firmware.
+- Set `driver_id` to a unique value, `uc_sony_driver` is already used for the embedded driver in the firmware.
 - Change `name` to easily identify the driver for discovery & setup with Remote Two or the web-configurator.
 - Optionally add a `"port": 8090` field for the WebSocket server listening port.
     - Default port: `9090`
