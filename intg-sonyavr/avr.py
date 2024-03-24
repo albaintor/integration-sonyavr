@@ -238,6 +238,8 @@ class SonyDevice:
 
             self._play_info = await self._receiver.get_play_info()
 
+            self.update_state()
+
             self._attr_available = True
             self.events.emit(Events.CONNECTED, self.id)
             self._notify_updated_data()
@@ -334,7 +336,7 @@ class SonyDevice:
 
     def update_state(self) -> bool:
         old_state = self._state
-        if not self._state:
+        if not self._powered:
             self._state = States.OFF
         elif self._playback_state and self._playback_state != States.UNKNOWN:
             self._state = self._playback_state
