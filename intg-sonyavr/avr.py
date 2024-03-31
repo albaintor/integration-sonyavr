@@ -293,7 +293,6 @@ class SonyDevice:
         """Set device availability and emit CONNECTED / DISCONNECTED event on change."""
         if self._attr_available != value:
             self._attr_available = value
-            self.events.emit(Events.CONNECTED if value else Events.DISCONNECTED, self.id)
 
     @property
     def name(self) -> str | None:
