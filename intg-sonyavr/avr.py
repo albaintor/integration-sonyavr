@@ -101,6 +101,7 @@ class SonyDevice:
         self._sound_fields: Setting | None = None
         self._play_info: list[PlayInfo] | None = None
         self._unique_id: str | None = None
+        self._websocket_task = None
 
         _LOG.debug("Sony AVR created: %s", device.address)
 
@@ -182,7 +183,14 @@ class SonyDevice:
         self._receiver.on_notification(ConnectChange, _try_reconnect)
 
         # Start websocket
-        await self.event_loop.create_task(self._receiver.listen_notifications())
+        if self._websocket_task:
+            try:
+                self._websocket_task.cancel()
+            except Exception:
+                pass
+            finally:
+                self._websocket_task = None
+        self._websocket_task = await self.event_loop.create_task(self._receiver.listen_notifications())
 
     async def connect(self):
         try:
@@ -261,6 +269,14 @@ class SonyDevice:
             return
         self._powered = False
         await self._receiver.stop_listen_notifications()
+        if self._websocket_task:
+            try:
+                self._websocket_task.cancel()
+            except Exception:
+                pass
+            finally:
+                self._websocket_task = None
+
 
         if self.id:
             self.events.emit(Events.DISCONNECTED, self.id)
