@@ -177,6 +177,7 @@ class SonyDevice:
             await self.event_loop.create_task(self._receiver.listen_notifications())
             _LOG.warning("Sony AVR [%s(%s)] Connection reestablished", self._name, self._receiver.endpoint)
 
+        self._receiver.clear_notification_callbacks()
         self._receiver.on_notification(VolumeChange, _volume_changed)
         self._receiver.on_notification(ContentChange, _source_changed)
         self._receiver.on_notification(PowerChange, _power_changed)
@@ -473,15 +474,17 @@ class SonyDevice:
         volume_sony = volume * (self._volume_max - self._volume_min) / 100 + self._volume_min
         _LOG.debug("Sony AVR setting volume to %s", volume_sony)
         await self._volume_control.set_volume(int(volume_sony))
-        self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: volume})
+        # self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: volume})
         return ucapi.StatusCodes.OK
 
     async def volume_up(self) -> ucapi.StatusCodes:
         """Send volume-up command to AVR."""
         volume_sony = self._volume + VOLUME_STEP * (self._volume_max - self._volume_min) / 100
         volume_sony = min(volume_sony, self._volume_max)
+        # volume = (volume_sony - self._volume_min)*100/(self._volume_max - self._volume_min)
         try:
             await self._volume_control.set_volume(int(volume_sony))
+            # self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: int(volume)})
         except SongpalException as ex:
             _LOG.error("Sony AVR error volume_up", ex)
             return ucapi.StatusCodes.BAD_REQUEST
@@ -491,8 +494,10 @@ class SonyDevice:
         """Send volume-down command to AVR."""
         volume_sony = self._volume - VOLUME_STEP * (self._volume_max - self._volume_min) / 100
         volume_sony = max(volume_sony, self._volume_min)
+        # volume = (volume_sony - self._volume_min)*100/(self._volume_max - self._volume_min)
         try:
             await self._volume_control.set_volume(int(volume_sony))
+            # self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: int(volume)})
         except SongpalException as ex:
             _LOG.error("Sony AVR error volume_down", ex)
             return ucapi.StatusCodes.BAD_REQUEST

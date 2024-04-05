@@ -54,17 +54,17 @@ class SonyMediaPlayer(MediaPlayer):
             Features.PLAY_PAUSE,
         ]
         attributes = {
-            Attributes.STATE: States.UNAVAILABLE,
-            Attributes.VOLUME: 0,
-            Attributes.MUTED: False,
-            Attributes.SOURCE: "",
-            Attributes.SOURCE_LIST: [],
-            Attributes.SOUND_MODE: "",
-            Attributes.SOUND_MODE_LIST: [],
-            Attributes.MEDIA_IMAGE_URL: "",
-            Attributes.MEDIA_TITLE: "",
-            Attributes.MEDIA_ARTIST: "",
-            Attributes.MEDIA_ALBUM: "",
+            Attributes.STATE: state_from_avr(receiver.state),
+            Attributes.VOLUME: receiver.volume_level,
+            Attributes.MUTED: receiver.is_volume_muted,
+            Attributes.SOURCE: receiver.source if receiver.source else "",
+            Attributes.SOURCE_LIST: receiver.source_list if receiver.source_list else [],
+            Attributes.SOUND_MODE: receiver.sound_mode,
+            Attributes.SOUND_MODE_LIST: receiver.sound_mode_list,
+            Attributes.MEDIA_IMAGE_URL: receiver.media_image_url,
+            Attributes.MEDIA_TITLE: receiver.media_title,
+            Attributes.MEDIA_ARTIST: receiver.media_artist,
+            Attributes.MEDIA_ALBUM: receiver.media_album_name,
         }
         # # use sound mode support & name from configuration: receiver might not yet be connected
         # if device.support_sound_mode:
