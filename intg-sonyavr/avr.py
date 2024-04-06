@@ -109,6 +109,7 @@ class SonyDevice:
         """Activate websocket for listening if wanted."""
         _LOG.info("Sony AVR Activating websocket connection")
 
+
         async def _volume_changed(volume: VolumeChange):
             _LOG.debug("Sony AVR volume changed: %s", volume)
             attr_changed = {}
@@ -187,6 +188,7 @@ class SonyDevice:
         if self._websocket_task:
             try:
                 self._websocket_task.cancel()
+                await self._receiver.stop_listen_notifications()
             except Exception:
                 pass
             finally:
