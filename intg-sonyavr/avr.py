@@ -7,7 +7,7 @@ This module implements the AVR AVR receiver communication of the Remote Two inte
 
 import asyncio
 import logging
-from asyncio import AbstractEventLoop
+from asyncio import AbstractEventLoop, Lock
 from collections import OrderedDict
 from enum import IntEnum
 
@@ -102,13 +102,17 @@ class SonyDevice:
         self._play_info: list[PlayInfo] | None = None
         self._unique_id: str | None = None
         self._websocket_task = None
+        self._connect_lock = Lock()
 
         _LOG.debug("Sony AVR created: %s", device.address)
 
     async def async_activate_websocket(self):
         """Activate websocket for listening if wanted."""
         _LOG.info("Sony AVR Activating websocket connection")
-
+        if self._connect_lock.locked():
+            _LOG.info("Sony AVR Activating websocket already initializing, abort")
+            return
+        await self._connect_lock.acquire()
 
         async def _volume_changed(volume: VolumeChange):
             _LOG.debug("Sony AVR volume changed: %s", volume)
@@ -194,6 +198,7 @@ class SonyDevice:
             finally:
                 self._websocket_task = None
         self._websocket_task = await self.event_loop.create_task(self._receiver.listen_notifications())
+        self._connect_lock.release()
 
     async def connect(self):
         try:
