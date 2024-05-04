@@ -58,6 +58,9 @@ async def on_r2_connect_cmd() -> None:
     _LOG.debug("R2 connect command: connecting device(s)")
     for receiver in _configured_avrs.values():
         # start background task
+        if receiver.available:
+            _LOG.debug("R2 connect : device %s already active", receiver._receiver.endpoint)
+            continue
         await receiver.connect()
         await receiver.async_activate_websocket()
         # _LOOP.create_task(receiver.connect())
@@ -102,6 +105,9 @@ async def on_r2_exit_standby() -> None:
 
     for configured in _configured_avrs.values():
         # start background task
+        if configured.available:
+            _LOG.debug("Exit standby event : device %s already active", configured._receiver.endpoint)
+            continue
         await configured.connect()
         await configured.async_activate_websocket()
         # _LOOP.create_task(configured.connect())
@@ -388,7 +394,6 @@ async def patched_broadcast_ws_event(
 async def main():
     """Start the Remote Two integration driver."""
     logging.basicConfig()
-
     level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
     logging.getLogger("avr").setLevel(level)
     logging.getLogger("discover").setLevel(level)
@@ -403,7 +408,8 @@ async def main():
 
     # _LOOP.create_task(receiver_status_poller())
     for receiver in _configured_avrs.values():
-        if not receiver.active:
+        if receiver.available:
+            _LOG.debug("Main driver : device %s already active", receiver._receiver.endpoint)
             continue
         await receiver.connect()
         await receiver.async_activate_websocket()

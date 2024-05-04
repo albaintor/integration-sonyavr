@@ -145,8 +145,7 @@ class SonyDevice:
         self.event_loop = loop or asyncio.get_running_loop()
         self.events = AsyncIOEventEmitter(self.event_loop)
         self._receiver: Device = Device(device.address)
-        self._active: bool = False
-        self._attr_available: bool = True
+        self._available: bool = False
 
         self._connecting: bool = False
         self._connection_attempts: int = 0
@@ -175,12 +174,7 @@ class SonyDevice:
 
     async def async_activate_websocket(self):
         """Activate websocket for listening if wanted."""
-        _LOG.info("Sony AVR Activating websocket connection")
-        if self._connect_lock.locked():
-            _LOG.info("Sony AVR Activating websocket already initializing, abort")
-            return
-        await self._connect_lock.acquire()
-
+        _LOG.debug("async_activate_websocket", exc_info=True)
         async def _volume_changed(volume: VolumeChange):
             _LOG.debug("Sony AVR volume changed: %s", volume)
             attr_changed = {}
@@ -220,13 +214,21 @@ class SonyDevice:
             # Start websocket
             if self._websocket_task:
                 try:
-                    self._websocket_task.cancel()
-                    await self._receiver.stop_listen_notifications()
+                    async with asyncio.timeout(1):
+                        self._websocket_task.cancel()
+                        await asyncio.sleep(0)
+                        await self._receiver.stop_listen_notifications()
                 except Exception:
                     pass
                 finally:
                     self._websocket_task = None
-            self._websocket_task = await self.event_loop.create_task(self._receiver.listen_notifications())
+            self._websocket_task = self.event_loop.create_task(self._receiver.listen_notifications())
+            _LOG.info(
+                "Sony AVR  [%s(%s)] Websocket initialized",
+                self._name,
+                self._receiver.endpoint
+            )
+            _LOG.debug("", exc_info=True)
 
         async def _try_reconnect(connect: ConnectChange):
             _LOG.warning(
@@ -235,14 +237,14 @@ class SonyDevice:
                 self._receiver.endpoint,
             )
             _LOG.debug("Disconnected: %s", connect.exception)
-            self._attr_available = False
+            self._available = False
             self._state = States.UNKNOWN
             self._notify_updated_data()
 
             # Try to reconnect forever, a successful reconnect will initialize
             # the websocket connection again.
             delay = DISCOVERY_AFTER_CONNECTION_ERRORS
-            while not self._attr_available:
+            while not self._available:
                 _LOG.debug("Sony AVR Trying to reconnect in %s seconds", delay)
                 self.events.emit(Events.CONNECTING, self.id)
                 await asyncio.sleep(delay)
@@ -262,14 +264,24 @@ class SonyDevice:
             await _init_websocket()
             _LOG.warning("Sony AVR [%s(%s)] Connection reestablished", self._name, self._receiver.endpoint)
 
-        self._receiver.clear_notification_callbacks()
-        self._receiver.on_notification(VolumeChange, _volume_changed)
-        self._receiver.on_notification(ContentChange, _source_changed)
-        self._receiver.on_notification(PowerChange, _power_changed)
-        self._receiver.on_notification(ConnectChange, _try_reconnect)
 
-        await _init_websocket()
-        self._connect_lock.release()
+        _LOG.info("Sony AVR Activating websocket connection")
+        if self._connect_lock.locked():
+            _LOG.info("Sony AVR Activating websocket already initializing, abort")
+            return
+        await self._connect_lock.acquire()
+        try:
+            self._receiver.clear_notification_callbacks()
+            self._receiver.on_notification(VolumeChange, _volume_changed)
+            self._receiver.on_notification(ContentChange, _source_changed)
+            self._receiver.on_notification(PowerChange, _power_changed)
+            self._receiver.on_notification(ConnectChange, _try_reconnect)
+            await _init_websocket()
+        except Exception as ex:
+            _LOG.info("Sony AVR Unknown error during websocket initialization %s. Please report", ex)
+        finally:
+            _LOG.info("Sony AVR websocket connection initialized")
+            self._connect_lock.release()
 
     async def connect(self):
         try:
@@ -295,7 +307,7 @@ class SonyDevice:
             volumes = await self._receiver.get_volume_information()
             if not volumes:
                 _LOG.error("Sony AVR Got no volume controls, bailing out")
-                self._attr_available = False
+                self._available = False
                 return
 
             if len(volumes) > 1:
@@ -327,13 +339,13 @@ class SonyDevice:
 
             self.update_state()
 
-            self._attr_available = True
+            self._available = True
             self.events.emit(Events.CONNECTED, self.id)
             self._notify_updated_data()
 
         except SongpalException as ex:
             _LOG.error("Unable to update: %s", ex)
-            self._attr_available = False
+            self._available = False
         finally:
             self._connecting = False
 
@@ -355,7 +367,7 @@ class SonyDevice:
                 pass
             finally:
                 self._websocket_task = None
-
+        self._available = False
         if self.id:
             self.events.emit(Events.DISCONNECTED, self.id)
 
@@ -373,20 +385,9 @@ class SonyDevice:
         return self._unique_id
 
     @property
-    def active(self) -> bool:
-        """Return true if device is active and should have an established connection."""
-        return self._active
-
-    @property
     def available(self) -> bool:
         """Return True if device is available."""
-        return self._attr_available
-
-    @available.setter
-    def available(self, value: bool):
-        """Set device availability and emit CONNECTED / DISCONNECTED event on change."""
-        if self._attr_available != value:
-            self._attr_available = value
+        return self._available
 
     @property
     def name(self) -> str | None:
