@@ -7,9 +7,14 @@ This module implements a Remote Two integration driver for Sony AVR receivers.
 """
 
 import asyncio
+import json
 import logging
 import os
 from typing import Any
+
+import websockets
+from ucapi import IntegrationAPI
+from ucapi.api import filter_log_msg_data
 
 import avr
 import config
@@ -18,6 +23,7 @@ import setup_flow
 import ucapi
 from config import avr_from_entity_id
 from ucapi.media_player import Attributes as MediaAttr
+import ucapi.api_definitions as uc
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
 _LOOP = asyncio.get_event_loop()
@@ -60,10 +66,11 @@ async def on_r2_connect_cmd() -> None:
 @api.listens_to(ucapi.Events.DISCONNECT)
 async def on_r2_disconnect_cmd():
     """Disconnect all configured receivers when the Remote Two sends the disconnect command."""
-    for receiver in _configured_avrs.values():
-        # start background task
-        await receiver.disconnect()
-        # _LOOP.create_task(receiver.disconnect())
+    if len(api._clients) == 0:
+        for receiver in _configured_avrs.values():
+            # start background task
+            await receiver.disconnect()
+            # _LOOP.create_task(receiver.disconnect())
 
 
 @api.listens_to(ucapi.Events.ENTER_STANDBY)
@@ -350,6 +357,34 @@ async def _async_remove(receiver: avr.SonyDevice) -> None:
     receiver.events.remove_all_listeners()
 
 
+async def patched_broadcast_ws_event(
+        self, msg: str, msg_data: dict[str, Any], category: uc.EventCategory
+) -> None:
+    """
+    Send the given event-message to all connected WebSocket clients.
+
+    If a client is no longer connected, a log message is printed and the remaining
+    clients are notified.
+
+    :param msg: event message name
+    :param msg_data: message data payload
+    :param category: event category
+    """
+    data = {"kind": "event", "msg": msg, "msg_data": msg_data, "cat": category}
+    data_dump = json.dumps(data)
+    data_log = None
+    # filter fields
+    if _LOG.isEnabledFor(logging.DEBUG):
+        data_log = json.dumps(data) if filter_log_msg_data(data) else data_dump
+
+    for websocket in self._clients.copy():
+        if _LOG.isEnabledFor(logging.DEBUG):
+            _LOG.debug("[%s] ->: %s", websocket.remote_address, data_log)
+        try:
+            await websocket.send(data_dump)
+        except websockets.exceptions.WebSocketException:
+            pass
+
 async def main():
     """Start the Remote Two integration driver."""
     logging.basicConfig()
@@ -373,6 +408,7 @@ async def main():
         await receiver.connect()
         await receiver.async_activate_websocket()
 
+    IntegrationAPI._broadcast_ws_event = patched_broadcast_ws_event
     await api.init("driver.json", setup_flow.driver_setup_handler)
 
 
