@@ -103,12 +103,12 @@ docker run --rm --name builder \
 ## Versioning
 
 We use [SemVer](http://semver.org/) for versioning. For the versions available, see the
-[tags and releases in this repository](https://github.com/unfoldedcircle/integration-sonyavr/releases).
+[tags and releases in this repository](https://github.com/albaintor/integration-sonyavr/releases).
 
 ## Changelog
 
 The major changes found in each new release are listed in the [changelog](CHANGELOG.md)
-and under the GitHub [releases](https://github.com/unfoldedcircle/integration-sonyavr/releases).
+and under the GitHub [releases](https://github.com/albaintor/integration-sonyavr/releases).
 
 ## Contributions
 
