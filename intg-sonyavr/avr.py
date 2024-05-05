@@ -168,9 +168,64 @@ class SonyDevice:
         self._play_info: list[PlayInfo] | None = None
         self._unique_id: str | None = None
         self._websocket_task = None
+        self._websocket_connect_lock = Lock()
         self._connect_lock = Lock()
 
         _LOG.debug("Sony AVR created: %s", device.address)
+
+
+    async def _init_websocket(self):
+        # Start websocket
+        if self._websocket_task:
+            try:
+                async with asyncio.timeout(1):
+                    self._websocket_task.cancel()
+                    await asyncio.sleep(0)
+                    await self._receiver.stop_listen_notifications()
+            except Exception:
+                pass
+            finally:
+                self._websocket_task = None
+        self._websocket_task = self.event_loop.create_task(self._receiver.listen_notifications())
+        _LOG.info(
+            "Sony AVR  [%s(%s)] Websocket initialized",
+            self._name,
+            self._receiver.endpoint
+        )
+        _LOG.debug("", exc_info=True)
+
+    async def reconnect(self):
+        _LOG.warning(
+            "Sony AVR  [%s(%s)] Got disconnected, trying to reconnect",
+            self._name,
+            self._receiver.endpoint,
+        )
+        self._available = False
+        self._state = States.UNKNOWN
+        self._notify_updated_data()
+
+        # Try to reconnect forever, a successful reconnect will initialize
+        # the websocket connection again.
+        delay = DISCOVERY_AFTER_CONNECTION_ERRORS
+        while not self._available:
+            _LOG.debug("Sony AVR Trying to reconnect in %s seconds", delay)
+            self.events.emit(Events.CONNECTING, self.id)
+            await asyncio.sleep(delay)
+            try:
+                async with asyncio.timeout(5):
+                    await self._receiver.get_supported_methods()
+            except (asyncio.TimeoutError, SongpalException) as ex:
+                _LOG.debug("Sony AVR Failed to reconnect: %s", ex)
+                delay = min(2 * delay, 300)
+                pass
+            else:
+                # We need to inform Remote about the state in case we are coming
+                # back from a disconnected state and update internal data
+                await self.connect()
+
+                # self._notify_updated_data()
+        await self._init_websocket()
+        _LOG.warning("Sony AVR [%s(%s)] Connection reestablished", self._name, self._receiver.endpoint)
 
     async def async_activate_websocket(self):
         """Activate websocket for listening if wanted."""
@@ -210,81 +265,35 @@ class SonyDevice:
             if self.update_state():
                 self.events.emit(Events.UPDATE, self.id, {MediaAttr.STATE: self._state})
 
-        async def _init_websocket():
-            # Start websocket
-            if self._websocket_task:
-                try:
-                    async with asyncio.timeout(1):
-                        self._websocket_task.cancel()
-                        await asyncio.sleep(0)
-                        await self._receiver.stop_listen_notifications()
-                except Exception:
-                    pass
-                finally:
-                    self._websocket_task = None
-            self._websocket_task = self.event_loop.create_task(self._receiver.listen_notifications())
-            _LOG.info(
-                "Sony AVR  [%s(%s)] Websocket initialized",
-                self._name,
-                self._receiver.endpoint
-            )
-            _LOG.debug("", exc_info=True)
-
         async def _try_reconnect(connect: ConnectChange):
-            _LOG.warning(
-                "Sony AVR  [%s(%s)] Got disconnected, trying to reconnect",
-                self._name,
-                self._receiver.endpoint,
-            )
             _LOG.debug("Disconnected: %s", connect.exception)
-            self._available = False
-            self._state = States.UNKNOWN
-            self._notify_updated_data()
-
-            # Try to reconnect forever, a successful reconnect will initialize
-            # the websocket connection again.
-            delay = DISCOVERY_AFTER_CONNECTION_ERRORS
-            while not self._available:
-                _LOG.debug("Sony AVR Trying to reconnect in %s seconds", delay)
-                self.events.emit(Events.CONNECTING, self.id)
-                await asyncio.sleep(delay)
-                try:
-                    async with asyncio.timeout(5):
-                        await self._receiver.get_supported_methods()
-                except (asyncio.TimeoutError, SongpalException) as ex:
-                    _LOG.debug("Sony AVR Failed to reconnect: %s", ex)
-                    delay = min(2 * delay, 300)
-                    pass
-                else:
-                    # We need to inform Remote about the state in case we are coming
-                    # back from a disconnected state and update internal data
-                    await self.connect()
-
-                    # self._notify_updated_data()
-            await _init_websocket()
-            _LOG.warning("Sony AVR [%s(%s)] Connection reestablished", self._name, self._receiver.endpoint)
+            await self.reconnect()
 
 
         _LOG.info("Sony AVR Activating websocket connection")
-        if self._connect_lock.locked():
+        if self._websocket_connect_lock.locked():
             _LOG.info("Sony AVR Activating websocket already initializing, abort")
             return
-        await self._connect_lock.acquire()
+        await self._websocket_connect_lock.acquire()
         try:
             self._receiver.clear_notification_callbacks()
             self._receiver.on_notification(VolumeChange, _volume_changed)
             self._receiver.on_notification(ContentChange, _source_changed)
             self._receiver.on_notification(PowerChange, _power_changed)
             self._receiver.on_notification(ConnectChange, _try_reconnect)
-            await _init_websocket()
+            await self._init_websocket()
         except Exception as ex:
             _LOG.info("Sony AVR Unknown error during websocket initialization %s. Please report", ex)
         finally:
             _LOG.info("Sony AVR websocket connection initialized")
-            self._connect_lock.release()
+            self._websocket_connect_lock.release()
 
     async def connect(self):
         try:
+            if self._connect_lock.locked():
+                _LOG.info("Sony AVR connection already in progress")
+                return
+            await self._connect_lock.acquire()
             self._connecting = True
             await self._receiver.get_supported_methods()
             if self._interface_info is None:
@@ -348,6 +357,7 @@ class SonyDevice:
             self._available = False
         finally:
             self._connecting = False
+            self._connect_lock.release()
 
     async def disconnect(self):
         """Disconnect from AVR."""
@@ -527,136 +537,86 @@ class SonyDevice:
             pass
         return None
 
-    async def power_on(self) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def power_on(self):
         """Send power-on command to AVR."""
-        try:
-            await self._receiver.set_power(True)
-            return ucapi.StatusCodes.OK
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error power_on", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
+        await self._receiver.set_power(True)
 
-    async def power_off(self) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def power_off(self):
         """Send power-off command to AVR."""
-        try:
-            await self._receiver.set_power(False)
-            return ucapi.StatusCodes.OK
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error power_on", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
+        await self._receiver.set_power(False)
 
-    async def set_volume_level(self, volume: float | None) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def set_volume_level(self, volume: float | None):
         """Set volume level, range 0..100."""
         if volume is None:
             return ucapi.StatusCodes.BAD_REQUEST
         volume_sony = volume * (self._volume_max - self._volume_min) / 100 + self._volume_min
         _LOG.debug("Sony AVR setting volume to %s", volume_sony)
         await self._volume_control.set_volume(int(volume_sony))
-        # self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: volume})
-        return ucapi.StatusCodes.OK
 
-    async def volume_up(self) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def volume_up(self):
         """Send volume-up command to AVR."""
         volume_sony = self._volume + VOLUME_STEP * (self._volume_max - self._volume_min) / 100
         volume_sony = min(volume_sony, self._volume_max)
-        # volume = (volume_sony - self._volume_min)*100/(self._volume_max - self._volume_min)
-        try:
-            await self._volume_control.set_volume(int(volume_sony))
-            # self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: int(volume)})
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error volume_up", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
-        return ucapi.StatusCodes.OK
+        await self._volume_control.set_volume(int(volume_sony))
 
-    async def volume_down(self) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def volume_down(self):
         """Send volume-down command to AVR."""
         volume_sony = self._volume - VOLUME_STEP * (self._volume_max - self._volume_min) / 100
         volume_sony = max(volume_sony, self._volume_min)
-        # volume = (volume_sony - self._volume_min)*100/(self._volume_max - self._volume_min)
-        try:
-            await self._volume_control.set_volume(int(volume_sony))
-            # self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: int(volume)})
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error volume_down", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
-        return ucapi.StatusCodes.OK
+        await self._volume_control.set_volume(int(volume_sony))
 
-    async def mute(self, muted: bool) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def mute(self, muted: bool):
         """Send mute command to AVR."""
         _LOG.debug("Sending mute: %s", muted)
-        try:
-            await self._volume_control.set_mute(muted)
-            self.events.emit(Events.UPDATE, self.id, {MediaAttr.MUTED: muted})
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error mute", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
-        return ucapi.StatusCodes.OK
+        await self._volume_control.set_mute(muted)
+        self.events.emit(Events.UPDATE, self.id, {MediaAttr.MUTED: muted})
 
-    async def play_pause(self) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def play_pause(self):
         """Send toggle-play-pause command to AVR."""
-        try:
-            await self._receiver.services["avContent"]["pausePlayingContent"]({})
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error play_pause", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
+        await self._receiver.services["avContent"]["pausePlayingContent"]({})
 
-        return ucapi.StatusCodes.OK
-
-    async def stop(self) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def stop(self):
         """Send toggle-play-pause command to AVR."""
-        try:
-            await self._receiver.services["avContent"]["stopPlayingContent"]({})
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error stop", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
-        return ucapi.StatusCodes.OK
+        await self._receiver.services["avContent"]["stopPlayingContent"]({})
 
-    async def next(self) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def next(self):
         """Send next-track command to AVR."""
-        try:
-            await self._receiver.services["avContent"]["setPlayNextContent"]({})
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error next", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
-        return ucapi.StatusCodes.OK
+        await self._receiver.services["avContent"]["setPlayNextContent"]({})
 
-    async def previous(self) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def previous(self):
         """Send previous-track command to AVR."""
-        try:
-            await self._receiver.services["avContent"]["setPlayPreviousContent"]({})
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error previous", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
-        return ucapi.StatusCodes.OK
+        await self._receiver.services["avContent"]["setPlayPreviousContent"]({})
 
-    async def select_source(self, source: str | None) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def select_source(self, source: str | None):
         """Send input_source command to AVR."""
         if not source:
             return ucapi.StatusCodes.BAD_REQUEST
         _LOG.debug("Sony AVR set input: %s", source)
         # switch to work.
-        try:
-            await self.power_on()
-            for out in self._sources.values():
-                if out.title == source:
-                    await out.activate()
-                    return ucapi.StatusCodes.OK
-            _LOG.error("Sony AVR unable to find output: %s", source)
-            return ucapi.StatusCodes.BAD_REQUEST
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error select_source", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
+        await self.power_on()
+        for out in self._sources.values():
+            if out.title == source:
+                await out.activate()
+                return ucapi.StatusCodes.OK
+        _LOG.error("Sony AVR unable to find output: %s", source)
 
-    async def select_sound_mode(self, sound_mode: str | None) -> ucapi.StatusCodes:
+    @cmd_wrapper
+    async def select_sound_mode(self, sound_mode: str | None):
         """Select sound mode."""
         if self._sound_fields is None:
             return ucapi.StatusCodes.BAD_REQUEST
-        try:
-            for opt in self._sound_fields.candidate:
-                if opt.title == sound_mode:
-                    await self._receiver.set_sound_settings("soundField", opt.value)
-                    break
-            return ucapi.StatusCodes.OK
-        except SongpalException as ex:
-            _LOG.error("Sony AVR error select_sound_mode", ex)
-            return ucapi.StatusCodes.BAD_REQUEST
+        for opt in self._sound_fields.candidate:
+            if opt.title == sound_mode:
+                await self._receiver.set_sound_settings("soundField", opt.value)
+                break
