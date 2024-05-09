@@ -173,15 +173,17 @@ class SonyDevice:
 
         _LOG.debug("Sony AVR created: %s", device.address)
 
-
     async def _init_websocket(self):
         # Start websocket
+        _LOG.debug(
+            "Sony AVR  [%s(%s)] Initializing websocket",
+            self._name,
+            self._receiver.endpoint,
+        )
         if self._websocket_task:
             try:
-                async with asyncio.timeout(1):
-                    self._websocket_task.cancel()
-                    await asyncio.sleep(0)
-                    await self._receiver.stop_listen_notifications()
+                self._websocket_task.cancel()
+                await self._receiver.stop_listen_notifications()
             except Exception:
                 pass
             finally:
@@ -222,14 +224,15 @@ class SonyDevice:
                 # We need to inform Remote about the state in case we are coming
                 # back from a disconnected state and update internal data
                 await self.connect()
-
                 # self._notify_updated_data()
+        _LOG.debug("Sony AVR reconnected")
         await self._init_websocket()
         _LOG.warning("Sony AVR [%s(%s)] Connection reestablished", self._name, self._receiver.endpoint)
 
     async def async_activate_websocket(self):
         """Activate websocket for listening if wanted."""
         _LOG.debug("async_activate_websocket", exc_info=True)
+
         async def _volume_changed(volume: VolumeChange):
             _LOG.debug("Sony AVR volume changed: %s", volume)
             attr_changed = {}
@@ -268,7 +271,6 @@ class SonyDevice:
         async def _try_reconnect(connect: ConnectChange):
             _LOG.debug("Disconnected: %s", connect.exception)
             await self.reconnect()
-
 
         _LOG.info("Sony AVR Activating websocket connection")
         if self._websocket_connect_lock.locked():
