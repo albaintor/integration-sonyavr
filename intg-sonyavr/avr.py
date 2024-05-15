@@ -91,7 +91,7 @@ def cmd_wrapper(
                 obj._receiver.endpoint,
                 exc,
             )
-            # Kodi not connected, launch a connect task but
+            # AVR not connected, launch a connect task but
             # don't wait more than 5 seconds, then process the command if connected
             # else returns error
             connect_task = obj.event_loop.create_task(obj.connect())
@@ -105,7 +105,7 @@ def cmd_wrapper(
                 )
                 pass
             else:
-                if not obj._connect_error:
+                if obj._available:
                     try:
                         await func(obj, *args, **kwargs)
                         return ucapi.StatusCodes.OK
