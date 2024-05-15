@@ -117,13 +117,14 @@ def cmd_wrapper(
                             obj._receiver.endpoint,
                             exc,
                         )
-            # If Kodi is off, we expect calls to fail.
+            # If AVR is off, we expect calls to fail.
             # await obj.event_loop.create_task(obj.connect())
             return ucapi.StatusCodes.BAD_REQUEST
         except Exception as ex:
             _LOG.error(
                 "Unknown error %s",
                 func.__name__)
+            return ucapi.StatusCodes.BAD_REQUEST
 
     return wrapper
 
@@ -606,11 +607,11 @@ class SonyDevice:
             return ucapi.StatusCodes.BAD_REQUEST
         _LOG.debug("Sony AVR set input: %s", source)
         # switch to work.
-        await self.power_on()
+        await self._receiver.set_power(True)
         for out in self._sources.values():
             if out.title == source:
                 await out.activate()
-                return ucapi.StatusCodes.OK
+                break
         _LOG.error("Sony AVR unable to find output: %s", source)
 
     @cmd_wrapper
