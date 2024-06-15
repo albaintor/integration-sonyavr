@@ -216,17 +216,26 @@ class SonyDevice:
             await asyncio.sleep(delay)
             try:
                 async with asyncio.timeout(5):
-                    await self._receiver.get_supported_methods()
+                    task = asyncio.create_task(self._receiver.get_supported_methods())
+                    await task
             except (asyncio.TimeoutError, SongpalException) as ex:
                 _LOG.debug("Sony AVR Failed to reconnect: %s", ex)
                 delay = min(2 * delay, 300)
+                if task:
+                    try:
+                        task.cancel()
+                        task = None
+                    except Exception:
+                        pass
                 pass
             else:
                 # We need to inform Remote about the state in case we are coming
                 # back from a disconnected state and update internal data
+                _LOG.debug("Sony AVR replied, connecting...")
                 await self.connect()
+                _LOG.debug("Sony AVR replied, connection : %s", self._available)
                 # self._notify_updated_data()
-        _LOG.debug("Sony AVR reconnected")
+        _LOG.debug("Sony AVR reconnected, init websocket...")
         await self._init_websocket()
         _LOG.warning("Sony AVR [%s(%s)] Connection reestablished", self._name, self._receiver.endpoint)
 
@@ -291,11 +300,17 @@ class SonyDevice:
             _LOG.info("Sony AVR websocket connection initialized")
             self._websocket_connect_lock.release()
 
+    async def connect_event(self):
+        self.events.emit(Events.CONNECTED, self.id)
+        self._notify_updated_data()
+
     async def connect(self):
         try:
             if self._connect_lock.locked():
                 _LOG.info("Sony AVR connection already in progress")
                 return
+            else:
+                _LOG.info("Sony AVR connect...")
             await self._connect_lock.acquire()
             self._connecting = True
             await self._receiver.get_supported_methods()

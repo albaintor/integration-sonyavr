@@ -60,6 +60,7 @@ async def on_r2_connect_cmd() -> None:
         # start background task
         if receiver.available:
             _LOG.debug("R2 connect : device %s already active", receiver._receiver.endpoint)
+            await receiver.connect_event()
             continue
         await receiver.connect()
         await receiver.async_activate_websocket()
