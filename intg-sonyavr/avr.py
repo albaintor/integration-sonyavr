@@ -248,7 +248,7 @@ class SonyDevice:
             attr_changed = {}
             if self._volume != volume.volume:
                 self._volume = volume.volume
-                attr_changed[MediaAttr.VOLUME] = self._volume
+                attr_changed[MediaAttr.VOLUME] = self.volume_level
             if self._attr_is_volume_muted != volume.mute:
                 self._attr_is_volume_muted = volume.mute
                 attr_changed[MediaAttr.MUTED] = self._attr_is_volume_muted
