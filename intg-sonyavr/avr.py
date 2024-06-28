@@ -76,6 +76,9 @@ def cmd_wrapper(
     async def wrapper(obj: _SonyDeviceT, *args: _P.args, **kwargs: _P.kwargs) -> ucapi.StatusCodes:
         """Wrap all command methods."""
         try:
+            # Reconnects if device was off
+            if obj._websocket_task is None:
+                await obj.reconnect()
             await func(obj, *args, **kwargs)
             return ucapi.StatusCodes.OK
         except SongpalException as exc:
@@ -171,6 +174,7 @@ class SonyDevice:
         self._websocket_task = None
         self._websocket_connect_lock = Lock()
         self._connect_lock = Lock()
+        self._check_device_task = None
 
         _LOG.debug("Sony AVR created: %s", device.address)
 
@@ -211,9 +215,8 @@ class SonyDevice:
         # the websocket connection again.
         delay = DISCOVERY_AFTER_CONNECTION_ERRORS
         while not self._available:
-            _LOG.debug("Sony AVR Trying to reconnect in %s seconds", delay)
-            self.events.emit(Events.CONNECTING, self.id)
-            await asyncio.sleep(delay)
+            _LOG.debug("Sony AVR Trying to reconnect every %s seconds", delay)
+            # self.events.emit(Events.CONNECTING, self.id)
             try:
                 async with asyncio.timeout(5):
                     task = asyncio.create_task(self._receiver.get_supported_methods())
@@ -235,6 +238,8 @@ class SonyDevice:
                 await self.connect()
                 _LOG.debug("Sony AVR replied, connection : %s", self._available)
                 # self._notify_updated_data()
+            if not self._available:
+                await asyncio.sleep(delay)
         _LOG.debug("Sony AVR reconnected, init websocket...")
         await self._init_websocket()
         _LOG.warning("Sony AVR [%s(%s)] Connection reestablished", self._name, self._receiver.endpoint)
@@ -272,11 +277,36 @@ class SonyDevice:
             elif bool(updated_data):
                 self.events.emit(Events.UPDATE, self.id, updated_data)
 
+        async def _wait_power_on():
+            MAX_CHECKS = 10
+            check_number = 0
+            while True:
+                await asyncio.sleep(10)
+                if self.state == States.ON:
+                    _LOG.debug("Device %s is on again %s", self.id)
+                    break
+                check_number += 1
+                _LOG.debug("Device %s is off check number %s", self.id, check_number)
+                if check_number > MAX_CHECKS:
+                    _LOG.debug("Device %s is still off, disconnect all", self.id)
+                    await self.close_connections()
+                    break
+            self._check_device_task = None
+
         async def _power_changed(power: PowerChange):
             _LOG.debug("Sony AVR Power changed: %s", power)
             self._powered = power.status
             if self.update_state():
                 self.events.emit(Events.UPDATE, self.id, {MediaAttr.STATE: self._state})
+            if self.state == States.OFF:
+                if self._check_device_task is None:
+                    self._check_device_task = self.event_loop.create_task(_wait_power_on())
+            elif self.state not in [States.UNKNOWN, States.UNAVAILABLE] and self._check_device_task:
+                try:
+                    self._check_device_task.cancel()
+                except Exception:
+                    pass
+                self._check_device_task = None
 
         async def _try_reconnect(connect: ConnectChange):
             _LOG.debug("Disconnected: %s", connect.exception)
@@ -377,13 +407,10 @@ class SonyDevice:
             self._connecting = False
             self._connect_lock.release()
 
-    async def disconnect(self):
-        """Disconnect from AVR."""
-        _LOG.debug("Disconnect %s", self.id)
+    async def close_connections(self):
+        """Close connections from AVR."""
+        _LOG.debug("Close connections %s", self.id)
         self._reconnect_delay = MIN_RECONNECT_DELAY
-        # Note: disconnecting during a connection task is currently not supported!
-        # Simply setting self._connecting = False doesn't work, and will start even more connection tasks after wakeup!
-        # This requires a state machine, or at least a separate connection task which can be cancelled.
         if self._connecting:
             return
         self._powered = False
@@ -395,6 +422,11 @@ class SonyDevice:
                 pass
             finally:
                 self._websocket_task = None
+
+    async def disconnect(self):
+        """Disconnect from AVR."""
+        _LOG.debug("Disconnect %s", self.id)
+        await self.close_connections()
         self._available = False
         if self.id:
             self.events.emit(Events.DISCONNECTED, self.id)
@@ -626,7 +658,7 @@ class SonyDevice:
         for out in self._sources.values():
             if out.title == source:
                 await out.activate()
-                break
+                return ucapi.StatusCodes.OK
         _LOG.error("Sony AVR unable to find output: %s", source)
 
     @cmd_wrapper

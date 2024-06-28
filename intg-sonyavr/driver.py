@@ -35,22 +35,6 @@ _configured_avrs: dict[str, avr.SonyDevice] = {}
 _R2_IN_STANDBY = False
 
 
-# async def receiver_status_poller(interval: float = 10.0) -> None:
-#     """Receiver data poller."""
-#     while True:
-#         await asyncio.sleep(interval)
-#         if _R2_IN_STANDBY:
-#             continue
-#         try:
-#             for receiver in _configured_avrs.values():
-#                 if not receiver.active:
-#                     continue
-#                 # TODO #20  run in parallel, join, adjust interval duration based on execution time for next update
-#                 await receiver.async_update_receiver_data()
-#         except (KeyError, ValueError):  # TODO check parallel access / modification while iterating a dict
-#             pass
-
-
 @api.listens_to(ucapi.Events.CONNECT)
 async def on_r2_connect_cmd() -> None:
     """Connect all configured receivers when the Remote Two sends the connect command."""
@@ -298,7 +282,7 @@ def _configure_new_avr(device: config.AvrDevice, connect: bool = True) -> None:
     # the device should not yet be configured, but better be safe
     if device.id in _configured_avrs:
         receiver = _configured_avrs[device.id]
-        receiver.disconnect()
+        _LOOP.create_task(receiver.disconnect())
     else:
         receiver = avr.SonyDevice(device, loop=_LOOP)
 
