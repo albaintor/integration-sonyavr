@@ -146,6 +146,7 @@ class SonyDevice:
         self.id: str = device.id
         # friendly name from configuration
         self._name: str = device.name
+        self._always_active = device.always_on
         self.event_loop = loop or asyncio.get_running_loop()
         self.events = AsyncIOEventEmitter(self.event_loop)
         self._receiver: Device = Device(device.address)
@@ -175,9 +176,8 @@ class SonyDevice:
         self._websocket_connect_lock = Lock()
         self._connect_lock = Lock()
         self._check_device_task = None
-        self._always_active = False
-
-        _LOG.debug("Sony AVR created: %s", device.address)
+        _LOG.debug("Sony AVR created: %s (%s), connection keep alive = %s", device.name,
+                   device.address, device.always_on)
 
     async def _init_websocket(self):
         # Start websocket

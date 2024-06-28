@@ -276,7 +276,15 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
                     "de": "Wähle deinen Sony AVR",
                     "fr": "Choisissez votre Sony AVR",
                 },
-            }
+            },
+            {
+                "id": "always_on",
+                "label": {
+                    "en": "Keep connection alive (faster initialization, but consumes more battery)",
+                    "fr": "Conserver la connexion active (lancement plus rapide, mais consomme plus de batterie)",
+                },
+                "field": {"checkbox": {"value": False}},
+            },
         ],
     )
 
@@ -291,6 +299,7 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     :return: the setup action on how to continue: SetupComplete if a valid AVR device was chosen.
     """
     host = msg.input_values["choice"]
+    always_on = msg.input_values.get("always_on") == "true"
     _LOG.debug("Chosen Sony AVR: %s. Trying to connect and retrieve device information...", host)
     try:
         # simple connection check
@@ -316,7 +325,7 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
         return SetupError(error_type=IntegrationSetupError.OTHER)
 
     config.devices.add(
-        AvrDevice(id=unique_id, name=interface_info.modelName, address=host)
+        AvrDevice(id=unique_id, name=interface_info.modelName, address=host, always_on=always_on)
     )  # triggers SonyAVR instance creation
     config.devices.store()
 

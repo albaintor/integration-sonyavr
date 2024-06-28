@@ -43,6 +43,13 @@ class AvrDevice:
     id: str
     name: str
     address: str
+    always_on: bool
+
+    def __init__(self, id, name, address, always_on=False):
+        self.id = id
+        self.name = name
+        self.address = address
+        self.always_on = always_on
 
 
 class _EnhancedJSONEncoder(json.JSONEncoder):
@@ -108,6 +115,7 @@ class Devices:
             if item.id == atv.id:
                 item.address = atv.address
                 item.name = atv.name
+                item.always_on = atv.always_on
                 return self.store()
         return False
 
