@@ -77,7 +77,7 @@ def cmd_wrapper(
         """Wrap all command methods."""
         try:
             # Reconnects if device was off
-            if obj._websocket_task is None:
+            if not obj._always_active and obj._websocket_task is None:
                 await obj.reconnect()
             await func(obj, *args, **kwargs)
             return ucapi.StatusCodes.OK
@@ -175,6 +175,7 @@ class SonyDevice:
         self._websocket_connect_lock = Lock()
         self._connect_lock = Lock()
         self._check_device_task = None
+        self._always_active = False
 
         _LOG.debug("Sony AVR created: %s", device.address)
 
@@ -298,7 +299,7 @@ class SonyDevice:
             self._powered = power.status
             if self.update_state():
                 self.events.emit(Events.UPDATE, self.id, {MediaAttr.STATE: self._state})
-            if self.state == States.OFF:
+            if self.state == States.OFF and not self._always_active:
                 if self._check_device_task is None:
                     self._check_device_task = self.event_loop.create_task(_wait_power_on())
             elif self.state not in [States.UNKNOWN, States.UNAVAILABLE] and self._check_device_task:
