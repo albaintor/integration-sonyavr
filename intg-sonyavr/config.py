@@ -45,12 +45,6 @@ class AvrDevice:
     address: str
     always_on: bool
 
-    def __init__(self, id, name, address, always_on=False):
-        self.id = id
-        self.name = name
-        self.address = address
-        self.always_on = always_on
-
 
 class _EnhancedJSONEncoder(json.JSONEncoder):
     """Python dataclass json encoder."""
@@ -168,10 +162,14 @@ class Devices:
             with open(self._cfg_file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             for item in data:
-                try:
-                    self._config.append(AvrDevice(**item))
-                except TypeError as ex:
-                    _LOG.warning("Invalid configuration entry will be ignored: %s", ex)
+                # not using AtvDevice(**item) to be able to migrate old configuration files with missing attributes
+                device_instance = AvrDevice(
+                    item.get("id"),
+                    item.get("name"),
+                    item.get("address"),
+                    item.get("always_on", False),
+                )
+                self._config.append(device_instance)
             return True
         except OSError:
             _LOG.error("Cannot open the config file")
