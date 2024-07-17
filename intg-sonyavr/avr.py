@@ -11,14 +11,20 @@ from asyncio import AbstractEventLoop, Lock
 from collections import OrderedDict
 from enum import IntEnum
 from functools import wraps
-from typing import TypeVar, ParamSpec, Callable, Concatenate, Awaitable, Coroutine, Any
-
-from songpal import Device, VolumeChange, ContentChange, PowerChange, ConnectChange, SongpalException
-from songpal.containers import InterfaceInfo, Sysinfo, Power, StateInfo, Setting, PlayInfo
+from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, TypeVar
 
 import ucapi
 from config import AvrDevice
 from pyee import AsyncIOEventEmitter
+from songpal import (
+    ConnectChange,
+    ContentChange,
+    Device,
+    PowerChange,
+    SongpalException,
+    VolumeChange,
+)
+from songpal.containers import InterfaceInfo, PlayInfo, Setting, Sysinfo
 from ucapi.media_player import Attributes as MediaAttr
 
 _LOG = logging.getLogger(__name__)
@@ -66,9 +72,9 @@ SONY_PLAYBACK_STATE_MAPPING = {
 }
 
 
-#TODO : use wrapper for commands, but to be confirmed as there is a reconnect task
+# TODO : use wrapper for commands, but to be confirmed as there is a reconnect task
 def cmd_wrapper(
-        func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
+    func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
 ) -> Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]:
     """Catch command exceptions."""
 
@@ -103,9 +109,7 @@ def cmd_wrapper(
                 async with asyncio.timeout(5):
                     await connect_task
             except asyncio.TimeoutError:
-                log_function(
-                    "Timeout for reconnect, command won't be sent"
-                )
+                log_function("Timeout for reconnect, command won't be sent")
                 pass
             else:
                 if obj._available:
@@ -124,9 +128,7 @@ def cmd_wrapper(
             # await obj.event_loop.create_task(obj.connect())
             return ucapi.StatusCodes.BAD_REQUEST
         except Exception as ex:
-            _LOG.error(
-                "Unknown error %s",
-                func.__name__)
+            _LOG.error("Unknown error %s %s", func.__name__, ex)
             return ucapi.StatusCodes.BAD_REQUEST
 
     return wrapper
@@ -136,10 +138,10 @@ class SonyDevice:
     """Representing a Sony AVR Device."""
 
     def __init__(
-            self,
-            device: AvrDevice,
-            timeout: float = DEFAULT_TIMEOUT,
-            loop: AbstractEventLoop | None = None,
+        self,
+        device: AvrDevice,
+        timeout: float = DEFAULT_TIMEOUT,
+        loop: AbstractEventLoop | None = None,
     ):
         """Create instance with given IP or hostname of AVR."""
         # identifier from configuration
@@ -176,8 +178,12 @@ class SonyDevice:
         self._websocket_connect_lock = Lock()
         self._connect_lock = Lock()
         self._check_device_task = None
-        _LOG.debug("Sony AVR created: %s (%s), connection keep alive = %s", device.name,
-                   device.address, device.always_on)
+        _LOG.debug(
+            "Sony AVR created: %s (%s), connection keep alive = %s",
+            device.name,
+            device.address,
+            device.always_on,
+        )
 
     async def _init_websocket(self):
         # Start websocket
@@ -198,7 +204,7 @@ class SonyDevice:
         _LOG.info(
             "Sony AVR  [%s(%s)] Websocket initialized",
             self._name,
-            self._receiver.endpoint
+            self._receiver.endpoint,
         )
         _LOG.debug("", exc_info=True)
 
@@ -243,7 +249,11 @@ class SonyDevice:
                 await asyncio.sleep(delay)
         _LOG.debug("Sony AVR reconnected, init websocket...")
         await self._init_websocket()
-        _LOG.warning("Sony AVR [%s(%s)] Connection reestablished", self._name, self._receiver.endpoint)
+        _LOG.warning(
+            "Sony AVR [%s(%s)] Connection reestablished",
+            self._name,
+            self._receiver.endpoint,
+        )
 
     async def async_activate_websocket(self):
         """Activate websocket for listening if wanted."""
@@ -326,7 +336,10 @@ class SonyDevice:
             self._receiver.on_notification(ConnectChange, _try_reconnect)
             await self._init_websocket()
         except Exception as ex:
-            _LOG.info("Sony AVR Unknown error during websocket initialization %s. Please report", ex)
+            _LOG.info(
+                "Sony AVR Unknown error during websocket initialization %s. Please report",
+                ex,
+            )
         finally:
             _LOG.info("Sony AVR websocket connection initialized")
             self._websocket_connect_lock.release()

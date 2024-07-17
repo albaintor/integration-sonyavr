@@ -12,18 +12,17 @@ import logging
 import os
 from typing import Any
 
-import websockets
-from ucapi import IntegrationAPI
-from ucapi.api import filter_log_msg_data
-
 import avr
 import config
 import media_player
 import setup_flow
 import ucapi
-from config import avr_from_entity_id
-from ucapi.media_player import Attributes as MediaAttr
 import ucapi.api_definitions as uc
+import websockets
+from config import avr_from_entity_id
+from ucapi import IntegrationAPI
+from ucapi.api import filter_log_msg_data
+from ucapi.media_player import Attributes as MediaAttr
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
 _LOOP = asyncio.get_event_loop()
@@ -91,7 +90,10 @@ async def on_r2_exit_standby() -> None:
     for configured in _configured_avrs.values():
         # start background task
         if configured.available:
-            _LOG.debug("Exit standby event : device %s already active", configured._receiver.endpoint)
+            _LOG.debug(
+                "Exit standby event : device %s already active",
+                configured._receiver.endpoint,
+            )
             continue
         await configured.connect()
         await configured.async_activate_websocket()
@@ -166,7 +168,8 @@ async def on_avr_connected(avr_id: str):
             ):
                 # TODO why STANDBY?
                 api.configured_entities.update_attributes(
-                    entity_id, {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.STANDBY}
+                    entity_id,
+                    {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.STANDBY},
                 )
 
 
@@ -181,7 +184,8 @@ async def on_avr_disconnected(avr_id: str):
 
         if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
             api.configured_entities.update_attributes(
-                entity_id, {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE}
+                entity_id,
+                {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE},
             )
 
     # TODO #20 when multiple devices are supported, the device state logic isn't that simple anymore!
@@ -199,7 +203,8 @@ async def on_avr_connection_error(avr_id: str, message):
 
         if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
             api.configured_entities.update_attributes(
-                entity_id, {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE}
+                entity_id,
+                {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE},
             )
 
     # TODO #20 when multiple devices are supported, the device state logic isn't that simple anymore!
@@ -210,7 +215,12 @@ async def handle_avr_address_change(avr_id: str, address: str) -> None:
     """Update device configuration with changed IP address."""
     device = config.devices.get(avr_id)
     if device and device.address != address:
-        _LOG.info("Updating IP address of configured AVR %s: %s -> %s", avr_id, device.address, address)
+        _LOG.info(
+            "Updating IP address of configured AVR %s: %s -> %s",
+            avr_id,
+            device.address,
+            address,
+        )
         device.address = address
         config.devices.update(device)
 
@@ -348,9 +358,7 @@ async def _async_remove(receiver: avr.SonyDevice) -> None:
     receiver.events.remove_all_listeners()
 
 
-async def patched_broadcast_ws_event(
-        self, msg: str, msg_data: dict[str, Any], category: uc.EventCategory
-) -> None:
+async def patched_broadcast_ws_event(self, msg: str, msg_data: dict[str, Any], category: uc.EventCategory) -> None:
     """
     Send the given event-message to all connected WebSocket clients.
 
@@ -375,6 +383,7 @@ async def patched_broadcast_ws_event(
             await websocket.send(data_dump)
         except websockets.exceptions.WebSocketException:
             pass
+
 
 async def main():
     """Start the Remote Two integration driver."""
