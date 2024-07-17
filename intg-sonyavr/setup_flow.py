@@ -9,10 +9,10 @@ import asyncio
 import logging
 from enum import IntEnum
 
-from songpal import Device, SongpalException
 import config
 import discover
 from config import AvrDevice
+from songpal import Device, SongpalException
 from ucapi import (
     AbortDriverSetup,
     DriverSetupRequest,
@@ -39,10 +39,17 @@ class SetupSteps(IntEnum):
 
 _setup_step = SetupSteps.INIT
 _cfg_add_device: bool = False
+# pylint: disable = C0301
+# flake8: noqa
+
 _user_input_discovery = RequestUserInput(
     {"en": "Setup mode", "de": "Setup Modus"},
     [
-        {"field": {"text": {"value": ""}}, "id": "address", "label": {"en": "Endpoint", "de": "IP-Adresse", "fr": "Adresse"}},
+        {
+            "field": {"text": {"value": ""}},
+            "id": "address",
+            "label": {"en": "Endpoint", "de": "IP-Adresse", "fr": "Adresse"},
+        },
         {
             "id": "info",
             "label": {"en": ""},
@@ -96,7 +103,9 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
     return SetupError()
 
 
-async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | SetupError:
+async def handle_driver_setup(
+    _msg: DriverSetupRequest,
+) -> RequestUserInput | SetupError:
     """
     Start driver setup.
 
@@ -161,7 +170,12 @@ async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | Se
             {"en": "Configuration mode", "de": "Konfigurations-Modus"},
             [
                 {
-                    "field": {"dropdown": {"value": dropdown_devices[0]["id"], "items": dropdown_devices}},
+                    "field": {
+                        "dropdown": {
+                            "value": dropdown_devices[0]["id"],
+                            "items": dropdown_devices,
+                        }
+                    },
                     "id": "choice",
                     "label": {
                         "en": "Configured devices",
@@ -170,7 +184,12 @@ async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | Se
                     },
                 },
                 {
-                    "field": {"dropdown": {"value": dropdown_actions[0]["id"], "items": dropdown_actions}},
+                    "field": {
+                        "dropdown": {
+                            "value": dropdown_actions[0]["id"],
+                            "items": dropdown_actions,
+                        }
+                    },
                     "id": "action",
                     "label": {
                         "en": "Action",
@@ -187,7 +206,9 @@ async def handle_driver_setup(_msg: DriverSetupRequest) -> RequestUserInput | Se
     return _user_input_discovery
 
 
-async def handle_configuration_mode(msg: UserDataResponse) -> RequestUserInput | SetupComplete | SetupError:
+async def handle_configuration_mode(
+    msg: UserDataResponse,
+) -> RequestUserInput | SetupComplete | SetupError:
     """
     Process user data response in a setup process.
 
@@ -249,7 +270,12 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
             device = Device(address)
             await device.get_supported_methods()
             interface_info = await device.get_interface_information()
-            dropdown_items.append({"id": address, "label": {"en": f"{interface_info.modelName} [{address}]"}})
+            dropdown_items.append(
+                {
+                    "id": address,
+                    "label": {"en": f"{interface_info.modelName} [{address}]"},
+                }
+            )
         except SongpalException as ex:
             _LOG.error("Cannot connect to manually entered address %s: %s", address, ex)
             return SetupError(error_type=IntegrationSetupError.CONNECTION_REFUSED)
@@ -257,7 +283,10 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
         _LOG.debug("Starting auto-discovery driver setup")
         avrs = await discover.sony_avrs()
         for a in avrs:
-            avr_data = {"id": a.endpoint, "label": {"en": f"{a.name} ({a.model_number}) [{a.endpoint}]"}}
+            avr_data = {
+                "id": a.endpoint,
+                "label": {"en": f"{a.name} ({a.model_number}) [{a.endpoint}]"},
+            }
             dropdown_items.append(avr_data)
 
     if not dropdown_items:
@@ -266,10 +295,19 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
 
     _setup_step = SetupSteps.DEVICE_CHOICE
     return RequestUserInput(
-        {"en": "Please choose your Sony AVR", "de": "Bitte Sony AVR auswählen", "fr": "Sélectionnez votre ampli Sony"},
+        {
+            "en": "Please choose your Sony AVR",
+            "de": "Bitte Sony AVR auswählen",
+            "fr": "Sélectionnez votre ampli Sony",
+        },
         [
             {
-                "field": {"dropdown": {"value": dropdown_items[0]["id"], "items": dropdown_items}},
+                "field": {
+                    "dropdown": {
+                        "value": dropdown_items[0]["id"],
+                        "items": dropdown_items,
+                    }
+                },
                 "id": "choice",
                 "label": {
                     "en": "Choose your Sony AVR",
@@ -300,7 +338,10 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     """
     host = msg.input_values["choice"]
     always_on = msg.input_values.get("always_on") == "true"
-    _LOG.debug("Chosen Sony AVR: %s. Trying to connect and retrieve device information...", host)
+    _LOG.debug(
+        "Chosen Sony AVR: %s. Trying to connect and retrieve device information...",
+        host,
+    )
     try:
         # simple connection check
         device = Device(host)
@@ -321,11 +362,19 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
         unique_id = system_info.wirelessMacAddr
 
     if unique_id is None:
-        _LOG.error("Could not get mac address of host %s: required to create a unique device", host)
+        _LOG.error(
+            "Could not get mac address of host %s: required to create a unique device",
+            host,
+        )
         return SetupError(error_type=IntegrationSetupError.OTHER)
 
     config.devices.add(
-        AvrDevice(id=unique_id, name=interface_info.modelName, address=host, always_on=always_on)
+        AvrDevice(
+            id=unique_id,
+            name=interface_info.modelName,
+            address=host,
+            always_on=always_on,
+        )
     )  # triggers SonyAVR instance creation
     config.devices.store()
 

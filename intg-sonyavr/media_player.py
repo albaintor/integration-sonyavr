@@ -8,8 +8,6 @@ Media-player entity functions.
 import logging
 from typing import Any
 
-from songpal import Device
-
 import avr
 from config import AvrDevice, create_entity_id
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
@@ -58,7 +56,7 @@ class SonyMediaPlayer(MediaPlayer):
             Attributes.VOLUME: receiver.volume_level,
             Attributes.MUTED: receiver.is_volume_muted,
             Attributes.SOURCE: receiver.source if receiver.source else "",
-            Attributes.SOURCE_LIST: receiver.source_list if receiver.source_list else [],
+            Attributes.SOURCE_LIST: (receiver.source_list if receiver.source_list else []),
             Attributes.SOUND_MODE: receiver.sound_mode,
             Attributes.SOUND_MODE_LIST: receiver.sound_mode_list,
             Attributes.MEDIA_IMAGE_URL: receiver.media_image_url,

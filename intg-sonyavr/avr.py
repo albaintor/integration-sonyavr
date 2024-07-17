@@ -7,18 +7,24 @@ This module implements the AVR AVR receiver communication of the Remote Two inte
 
 import asyncio
 import logging
-from asyncio import AbstractEventLoop, Lock
+from asyncio import AbstractEventLoop, CancelledError, Lock
 from collections import OrderedDict
 from enum import IntEnum
 from functools import wraps
-from typing import TypeVar, ParamSpec, Callable, Concatenate, Awaitable, Coroutine, Any
-
-from songpal import Device, VolumeChange, ContentChange, PowerChange, ConnectChange, SongpalException
-from songpal.containers import InterfaceInfo, Sysinfo, Power, StateInfo, Setting, PlayInfo
+from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, TypeVar
 
 import ucapi
 from config import AvrDevice
 from pyee import AsyncIOEventEmitter
+from songpal import (
+    ConnectChange,
+    ContentChange,
+    Device,
+    PowerChange,
+    SongpalException,
+    VolumeChange,
+)
+from songpal.containers import InterfaceInfo, PlayInfo, Setting, Sysinfo
 from ucapi.media_player import Attributes as MediaAttr
 
 _LOG = logging.getLogger(__name__)
@@ -66,15 +72,16 @@ SONY_PLAYBACK_STATE_MAPPING = {
 }
 
 
-#TODO : use wrapper for commands, but to be confirmed as there is a reconnect task
+# TODO : use wrapper for commands, but to be confirmed as there is a reconnect task
 def cmd_wrapper(
-        func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
+    func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
 ) -> Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]:
     """Catch command exceptions."""
 
     @wraps(func)
     async def wrapper(obj: _SonyDeviceT, *args: _P.args, **kwargs: _P.kwargs) -> ucapi.StatusCodes:
         """Wrap all command methods."""
+        # pylint: disable = W0212
         try:
             # Reconnects if device was off
             if not obj._always_active and obj._websocket_task is None:
@@ -103,30 +110,26 @@ def cmd_wrapper(
                 async with asyncio.timeout(5):
                     await connect_task
             except asyncio.TimeoutError:
-                log_function(
-                    "Timeout for reconnect, command won't be sent"
-                )
-                pass
+                log_function("Timeout for reconnect, command won't be sent")
             else:
                 if obj._available:
                     try:
                         await func(obj, *args, **kwargs)
                         return ucapi.StatusCodes.OK
-                    except SongpalException as exc:
+                    except SongpalException as ex:
                         log_function(
                             "Error calling %s on [%s(%s)]: %r trying to reconnect",
                             func.__name__,
                             obj._name,
                             obj._receiver.endpoint,
-                            exc,
+                            ex,
                         )
             # If AVR is off, we expect calls to fail.
             # await obj.event_loop.create_task(obj.connect())
             return ucapi.StatusCodes.BAD_REQUEST
+        # pylint: disable = W0718
         except Exception as ex:
-            _LOG.error(
-                "Unknown error %s",
-                func.__name__)
+            _LOG.error("Unknown error %s %s", func.__name__, ex)
             return ucapi.StatusCodes.BAD_REQUEST
 
     return wrapper
@@ -136,10 +139,9 @@ class SonyDevice:
     """Representing a Sony AVR Device."""
 
     def __init__(
-            self,
-            device: AvrDevice,
-            timeout: float = DEFAULT_TIMEOUT,
-            loop: AbstractEventLoop | None = None,
+        self,
+        device: AvrDevice,
+        loop: AbstractEventLoop | None = None,
     ):
         """Create instance with given IP or hostname of AVR."""
         # identifier from configuration
@@ -176,8 +178,12 @@ class SonyDevice:
         self._websocket_connect_lock = Lock()
         self._connect_lock = Lock()
         self._check_device_task = None
-        _LOG.debug("Sony AVR created: %s (%s), connection keep alive = %s", device.name,
-                   device.address, device.always_on)
+        _LOG.debug(
+            "Sony AVR created: %s (%s), connection keep alive = %s",
+            device.name,
+            device.address,
+            device.always_on,
+        )
 
     async def _init_websocket(self):
         # Start websocket
@@ -190,6 +196,7 @@ class SonyDevice:
             try:
                 self._websocket_task.cancel()
                 await self._receiver.stop_listen_notifications()
+            # pylint: disable = W0718
             except Exception:
                 pass
             finally:
@@ -198,11 +205,12 @@ class SonyDevice:
         _LOG.info(
             "Sony AVR  [%s(%s)] Websocket initialized",
             self._name,
-            self._receiver.endpoint
+            self._receiver.endpoint,
         )
         _LOG.debug("", exc_info=True)
 
     async def reconnect(self):
+        """Reconnect to device."""
         _LOG.warning(
             "Sony AVR  [%s(%s)] Got disconnected, trying to reconnect",
             self._name,
@@ -229,9 +237,8 @@ class SonyDevice:
                     try:
                         task.cancel()
                         task = None
-                    except Exception:
+                    except CancelledError:
                         pass
-                pass
             else:
                 # We need to inform Remote about the state in case we are coming
                 # back from a disconnected state and update internal data
@@ -243,10 +250,15 @@ class SonyDevice:
                 await asyncio.sleep(delay)
         _LOG.debug("Sony AVR reconnected, init websocket...")
         await self._init_websocket()
-        _LOG.warning("Sony AVR [%s(%s)] Connection reestablished", self._name, self._receiver.endpoint)
+        _LOG.warning(
+            "Sony AVR [%s(%s)] Connection reestablished",
+            self._name,
+            self._receiver.endpoint,
+        )
 
     async def async_activate_websocket(self):
         """Activate websocket for listening if wanted."""
+        # pylint: disable = R0915
         _LOG.debug("async_activate_websocket", exc_info=True)
 
         async def _volume_changed(volume: VolumeChange):
@@ -279,16 +291,16 @@ class SonyDevice:
                 self.events.emit(Events.UPDATE, self.id, updated_data)
 
         async def _wait_power_on():
-            MAX_CHECKS = 10
+            max_checks = 10
             check_number = 0
             while True:
                 await asyncio.sleep(10)
                 if self.state == States.ON:
-                    _LOG.debug("Device %s is on again %s", self.id)
+                    _LOG.debug("Device %s is on again", self.id)
                     break
                 check_number += 1
                 _LOG.debug("Device %s is off check number %s", self.id, check_number)
-                if check_number > MAX_CHECKS:
+                if check_number > max_checks:
                     _LOG.debug("Device %s is still off, disconnect all", self.id)
                     await self.close_connections()
                     break
@@ -305,7 +317,7 @@ class SonyDevice:
             elif self.state not in [States.UNKNOWN, States.UNAVAILABLE] and self._check_device_task:
                 try:
                     self._check_device_task.cancel()
-                except Exception:
+                except CancelledError:
                     pass
                 self._check_device_task = None
 
@@ -325,23 +337,29 @@ class SonyDevice:
             self._receiver.on_notification(PowerChange, _power_changed)
             self._receiver.on_notification(ConnectChange, _try_reconnect)
             await self._init_websocket()
+        # pylint: disable = W0718
         except Exception as ex:
-            _LOG.info("Sony AVR Unknown error during websocket initialization %s. Please report", ex)
+            _LOG.info(
+                "Sony AVR Unknown error during websocket initialization %s. Please report",
+                ex,
+            )
         finally:
             _LOG.info("Sony AVR websocket connection initialized")
             self._websocket_connect_lock.release()
 
     async def connect_event(self):
+        """Connect event."""
         self.events.emit(Events.CONNECTED, self.id)
         self._notify_updated_data()
 
     async def connect(self):
+        """Connect to device."""
+        # pylint: disable = R0915
         try:
             if self._connect_lock.locked():
                 _LOG.info("Sony AVR connection already in progress")
                 return
-            else:
-                _LOG.info("Sony AVR connect...")
+            _LOG.info("Sony AVR connect...")
             await self._connect_lock.acquire()
             self._connecting = True
             await self._receiver.get_supported_methods()
@@ -419,7 +437,7 @@ class SonyDevice:
         if self._websocket_task:
             try:
                 self._websocket_task.cancel()
-            except Exception:
+            except CancelledError:
                 pass
             finally:
                 self._websocket_task = None
@@ -463,6 +481,11 @@ class SonyDevice:
         return self._receiver.endpoint
 
     @property
+    def receiver(self) -> Device:
+        """Return the receiver device instance."""
+        return self._receiver
+
+    @property
     def manufacturer(self) -> str | None:
         """Return the manufacturer of the device as string."""
         if self._interface_info:
@@ -490,6 +513,7 @@ class SonyDevice:
         # return self._receiver.get_soundfield()
 
     def update_state(self) -> bool:
+        """Update device state."""
         old_state = self._state
         if not self._powered:
             self._state = States.OFF
@@ -548,6 +572,7 @@ class SonyDevice:
         """Image url of current playing media."""
         try:
             return self.get_current_play_info().content.thumbnailUrl
+        # pylint: disable = W0718
         except Exception:
             pass
         return ""
@@ -557,6 +582,7 @@ class SonyDevice:
         """Title of current playing media."""
         try:
             return self.get_current_play_info().title
+        # pylint: disable = W0718
         except Exception:
             pass
         return ""
@@ -566,6 +592,7 @@ class SonyDevice:
         """Artist of current playing media, music track only."""
         try:
             return self.get_current_play_info().artist
+        # pylint: disable = W0718
         except Exception:
             pass
         return ""
@@ -575,15 +602,18 @@ class SonyDevice:
         """Album name of current playing media, music track only."""
         try:
             return self.get_current_play_info().albumName
+        # pylint: disable = W0718
         except Exception:
             pass
         return ""
 
     def get_current_play_info(self) -> PlayInfo | None:
+        """Get current playback information."""
         try:
             for play_info in self._play_info:
                 if play_info.state and play_info.state != "STOPPED":
                     return play_info
+        # pylint: disable = W0718
         except Exception:
             pass
         return None
