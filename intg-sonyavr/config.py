@@ -39,6 +39,7 @@ def avr_from_entity_id(entity_id: str) -> str | None:
 @dataclass
 class AvrDevice:
     """Sony device configuration."""
+
     # pylint: disable = W0622
     id: str
     name: str
@@ -46,6 +47,7 @@ class AvrDevice:
     always_on: bool
 
     def __init__(self, id, name, address, always_on=False):
+        """Initialize device configuration instance."""
         self.id = id
         self.name = name
         self.address = address
