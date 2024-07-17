@@ -39,7 +39,9 @@ class SetupSteps(IntEnum):
 
 _setup_step = SetupSteps.INIT
 _cfg_add_device: bool = False
-# pylint: disable = E501
+# pylint: disable = C0301
+# flake8: noqa
+
 _user_input_discovery = RequestUserInput(
     {"en": "Setup mode", "de": "Setup Modus"},
     [

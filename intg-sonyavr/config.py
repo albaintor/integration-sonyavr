@@ -39,7 +39,7 @@ def avr_from_entity_id(entity_id: str) -> str | None:
 @dataclass
 class AvrDevice:
     """Sony device configuration."""
-
+    # pylint: disable = W0622
     id: str
     name: str
     address: str

@@ -42,7 +42,7 @@ async def on_r2_connect_cmd() -> None:
     for receiver in _configured_avrs.values():
         # start background task
         if receiver.available:
-            _LOG.debug("R2 connect : device %s already active", receiver._receiver.endpoint)
+            _LOG.debug("R2 connect : device %s already active", receiver.receiver.endpoint)
             await receiver.connect_event()
             continue
         await receiver.connect()
@@ -53,6 +53,7 @@ async def on_r2_connect_cmd() -> None:
 @api.listens_to(ucapi.Events.DISCONNECT)
 async def on_r2_disconnect_cmd():
     """Disconnect all configured receivers when the Remote Two sends the disconnect command."""
+    # pylint: disable = W0212
     if len(api._clients) == 0:
         for receiver in _configured_avrs.values():
             # start background task
@@ -89,6 +90,7 @@ async def on_r2_exit_standby() -> None:
 
     for configured in _configured_avrs.values():
         # start background task
+        # pylint: disable = W0212
         if configured.available:
             _LOG.debug(
                 "Exit standby event : device %s already active",
@@ -375,7 +377,7 @@ async def patched_broadcast_ws_event(self, msg: str, msg_data: dict[str, Any], c
     # filter fields
     if _LOG.isEnabledFor(logging.DEBUG):
         data_log = json.dumps(data) if filter_log_msg_data(data) else data_dump
-
+    # pylint: disable = W0212
     for websocket in self._clients.copy():
         if _LOG.isEnabledFor(logging.DEBUG):
             _LOG.debug("[%s] ->: %s", websocket.remote_address, data_log)
@@ -403,11 +405,11 @@ async def main():
     # _LOOP.create_task(receiver_status_poller())
     for receiver in _configured_avrs.values():
         if receiver.available:
-            _LOG.debug("Main driver : device %s already active", receiver._receiver.endpoint)
+            _LOG.debug("Main driver : device %s already active", receiver.receiver.endpoint)
             continue
         await receiver.connect()
         await receiver.async_activate_websocket()
-
+    # pylint: disable = W0212
     IntegrationAPI._broadcast_ws_event = patched_broadcast_ws_event
     await api.init("driver.json", setup_flow.driver_setup_handler)
 

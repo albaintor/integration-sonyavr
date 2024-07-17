@@ -28,7 +28,6 @@ async def sony_avrs() -> list[DiscoveredDevice]:
     global _found_devices
 
     async def discovered_devices(discovered_device: DiscoveredDevice):
-        global _found_devices
         _found_devices.append(discovered_device)
 
     try:
