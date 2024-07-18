@@ -5,13 +5,13 @@
   "name": {
     "en": "Sony AVR Network Receivers"
   },
-  "icon": "uc:integration",
+  "icon": "custom:sony.png",
   "description": {
     "en": "Control your Sony AVRs with Remote Two.",
     "de": "Steuere Sony AVRs mit Remote Two.",
     "fr": "Contrôler Sony AVRs avec Remote Two."
   },
-  "port": 8092,
+  "port": 9095,
   "developer": {
     "name": "Unfolded Circle ApS",
     "email": "hello@unfoldedcircle.com",
