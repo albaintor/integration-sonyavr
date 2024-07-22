@@ -11,8 +11,6 @@
     "de": "Steuere Sony AVRs mit Remote Two.",
     "fr": "Contrôler Sony AVRs avec Remote Two."
   },
-  "port": 9095,
-  "device_discovery": true,
   "developer": {
     "name": "Unfolded Circle ApS",
     "email": "hello@unfoldedcircle.com",
