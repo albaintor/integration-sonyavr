@@ -626,7 +626,14 @@ class SonyDevice:
     @cmd_wrapper
     async def power_off(self):
         """Send power-off command to AVR."""
-        await self._receiver.set_power(False)
+        try:
+            await self._receiver.set_power(False)
+        except SongpalException as ex:
+            if ex.code == 40000:
+                _LOG.debug("Device is probably already off")
+                self._state = States.OFF
+            else:
+                raise ex
 
     @cmd_wrapper
     async def set_volume_level(self, volume: float | None):
