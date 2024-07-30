@@ -47,6 +47,8 @@ async def on_r2_connect_cmd() -> None:
             continue
         await receiver.connect()
         await receiver.async_activate_websocket()
+    if len(_configured_avrs.values()) == 0:
+        await api.set_device_state(ucapi.DeviceStates.CONNECTED)
         # _LOOP.create_task(receiver.connect())
 
 

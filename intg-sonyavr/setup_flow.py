@@ -8,6 +8,7 @@ Setup flow for Sony AVR integration.
 import asyncio
 import logging
 from enum import IntEnum
+from urllib.parse import urlparse
 
 import config
 import discover
@@ -36,6 +37,8 @@ class SetupSteps(IntEnum):
     DISCOVER = 2
     DEVICE_CHOICE = 3
 
+
+DEFAULT_PORT = 10000
 
 _setup_step = SetupSteps.INIT
 _cfg_add_device: bool = False
@@ -266,6 +269,19 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
     if address:
         _LOG.debug("Starting manual driver setup for %s", address)
         try:
+            if not address.startswith("http://"):
+                address = f"http://{address}"
+
+            result = urlparse(address)
+            path = result.path
+            port = result.port
+            if not path:
+                path = "/sony"
+            if not port:
+                port = DEFAULT_PORT
+            address = f"{result.scheme}://{result.hostname}:{port}{path}"
+
+            _LOG.debug("Formatted address : %s", address)
             # simple connection check
             device = Device(address)
             await device.get_supported_methods()
@@ -343,6 +359,18 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
         host,
     )
     try:
+        if not host.startswith("http://"):
+            host = f"http://{host}"
+
+        result = urlparse(host)
+        path = result.path
+        port = result.port
+        if not path:
+            path = "/sony"
+        if not port:
+            port = DEFAULT_PORT
+        host = f"{result.scheme}://{result.hostname}:{port}{path}"
+
         # simple connection check
         device = Device(host)
         await device.get_supported_methods()
