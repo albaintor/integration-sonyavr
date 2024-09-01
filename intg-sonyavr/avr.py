@@ -15,7 +15,7 @@ from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, 
 
 import ucapi
 from config import AvrDevice
-from pyee import AsyncIOEventEmitter
+from pyee.asyncio import AsyncIOEventEmitter
 from songpal import (
     ConnectChange,
     ContentChange,
