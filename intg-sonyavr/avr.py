@@ -25,7 +25,7 @@ from songpal import (
     VolumeChange,
 )
 from songpal.containers import InterfaceInfo, PlayInfo, Setting, Sysinfo
-from ucapi.media_player import Attributes as MediaAttr
+from ucapi.media_player import Attributes as MediaAttr, States
 
 _LOG = logging.getLogger(__name__)
 
@@ -53,20 +53,8 @@ class Events(IntEnum):
     # IP_ADDRESS_CHANGED = 6
 
 
-class States(IntEnum):
-    """State of a connected AVR."""
-
-    UNKNOWN = 0
-    UNAVAILABLE = 1
-    OFF = 2
-    ON = 3
-    PLAYING = 4
-    PAUSED = 5
-    STOPPED = 6
-
-
 SONY_PLAYBACK_STATE_MAPPING = {
-    "STOPPED": States.STOPPED,
+    "STOPPED": States.ON,
     "PLAYING": States.PLAYING,
     "PAUSED": States.PAUSED,
 }
@@ -462,6 +450,24 @@ class SonyDevice:
     def unique_id(self) -> str:
         """Return the unique ID of the device (serial number or mac address if none)."""
         return self._unique_id
+
+    @property
+    def attributes(self) -> dict[str, any]:
+        """Return the device attributes."""
+        updated_data = {
+            MediaAttr.STATE: self.state,
+            MediaAttr.MUTED: self.is_volume_muted,
+            MediaAttr.VOLUME: self.volume_level,
+            MediaAttr.SOURCE_LIST: self.source_list,
+            MediaAttr.SOURCE: self.source,
+            MediaAttr.SOUND_MODE_LIST: self.sound_mode_list,
+            MediaAttr.SOUND_MODE: self.sound_mode,
+            MediaAttr.MEDIA_IMAGE_URL: self.media_image_url,
+            MediaAttr.MEDIA_TITLE: self.media_title,
+            MediaAttr.MEDIA_ARTIST: self.media_artist,
+            MediaAttr.MEDIA_ALBUM: self.media_album_name
+        }
+        return updated_data
 
     @property
     def available(self) -> bool:

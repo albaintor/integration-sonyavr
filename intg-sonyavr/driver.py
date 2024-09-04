@@ -119,8 +119,8 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
         avr_id = avr_from_entity_id(entity_id)
         if avr_id in _configured_avrs:
             receiver = _configured_avrs[avr_id]
-            state = media_player.state_from_avr(receiver.state)
-            api.configured_entities.update_attributes(entity_id, {ucapi.media_player.Attributes.STATE: state})
+            attributes = receiver.attributes
+            api.configured_entities.update_attributes(entity_id, attributes)
             continue
 
         device = config.devices.get(avr_id)

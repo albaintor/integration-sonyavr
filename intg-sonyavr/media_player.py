@@ -15,17 +15,6 @@ from ucapi.media_player import Attributes, Commands, DeviceClasses, Features, St
 
 _LOG = logging.getLogger(__name__)
 
-# Mapping of an AVR state to a media-player entity state
-MEDIA_PLAYER_STATE_MAPPING = {
-    avr.States.ON: States.ON,
-    avr.States.OFF: States.OFF,
-    avr.States.STOPPED: States.ON,
-    avr.States.PAUSED: States.PAUSED,
-    avr.States.PLAYING: States.PLAYING,
-    avr.States.UNAVAILABLE: States.UNAVAILABLE,
-    avr.States.UNKNOWN: States.UNKNOWN,
-}
-
 
 class SonyMediaPlayer(MediaPlayer):
     """Representation of a Sony Media Player entity."""
@@ -52,7 +41,7 @@ class SonyMediaPlayer(MediaPlayer):
             Features.PLAY_PAUSE,
         ]
         attributes = {
-            Attributes.STATE: state_from_avr(receiver.state),
+            Attributes.STATE: receiver.state,
             Attributes.VOLUME: receiver.volume_level,
             Attributes.MUTED: receiver.is_volume_muted,
             Attributes.SOURCE: receiver.source if receiver.source else "",
@@ -131,7 +120,7 @@ class SonyMediaPlayer(MediaPlayer):
         attributes = {}
 
         if Attributes.STATE in update:
-            state = state_from_avr(update[Attributes.STATE])
+            state = update[Attributes.STATE]
             attributes = self._key_update_helper(Attributes.STATE, state, attributes)
 
         for attr in [
@@ -182,15 +171,3 @@ class SonyMediaPlayer(MediaPlayer):
             attributes[key] = value
 
         return attributes
-
-
-def state_from_avr(avr_state: avr.States) -> States:
-    """
-    Convert AVR state to UC API media-player state.
-
-    :param avr_state: Denon AVR state
-    :return: UC API media_player state
-    """
-    if avr_state in MEDIA_PLAYER_STATE_MAPPING:
-        return MEDIA_PLAYER_STATE_MAPPING[avr_state]
-    return States.UNKNOWN
