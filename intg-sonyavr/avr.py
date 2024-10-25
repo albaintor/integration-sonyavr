@@ -714,3 +714,10 @@ class SonyDevice:
             if opt.title == sound_mode:
                 await self._receiver.set_sound_settings("soundField", opt.value)
                 break
+
+    @cmd_wrapper
+    async def set_sound_settings(self, setting: str, value: any):
+        """Select sound mode."""
+        if setting is None or value is None:
+            return ucapi.StatusCodes.BAD_REQUEST
+        await self._receiver.set_sound_settings(setting, value)

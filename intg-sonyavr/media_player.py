@@ -11,7 +11,9 @@ from typing import Any
 import avr
 from config import AvrDevice, create_entity_id
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
-from ucapi.media_player import Attributes, Commands, DeviceClasses, Features, States
+from ucapi.media_player import Attributes, Commands, DeviceClasses, Features, States, Options
+
+from const import SIMPLE_COMMANDS
 
 _LOG = logging.getLogger(__name__)
 
@@ -65,6 +67,7 @@ class SonyMediaPlayer(MediaPlayer):
             features,
             attributes,
             device_class=DeviceClasses.RECEIVER,
+            options={Options.SIMPLE_COMMANDS: SIMPLE_COMMANDS}
         )
 
     async def command(self, cmd_id: str, params: dict[str, Any] | None = None) -> StatusCodes:
@@ -105,6 +108,15 @@ class SonyMediaPlayer(MediaPlayer):
             res = await self._receiver.previous()
         elif cmd_id == Commands.PLAY_PAUSE:
             res = await self._receiver.play_pause()
+        elif cmd_id in self.options[Options.SIMPLE_COMMANDS]:
+            if cmd_id == "ZONE_HDMI_OUTPUT_AB":
+                res = await self._receiver.set_sound_settings('hdmiOutput', 'hdmi_AB')
+            elif cmd_id == "ZONE_HDMI_OUTPUT_A":
+                res = await self._receiver.set_sound_settings('hdmiOutput', 'hdmi_A')
+            elif cmd_id == "ZONE_HDMI_OUTPUT_B":
+                res = await self._receiver.set_sound_settings('hdmiOutput', 'hdim_B')
+            elif cmd_id == "ZONE_HDMI_OUTPUT_OFF":
+                res = await self._receiver.set_sound_settings('hdmiOutput', 'off')
         else:
             return StatusCodes.NOT_IMPLEMENTED
 
