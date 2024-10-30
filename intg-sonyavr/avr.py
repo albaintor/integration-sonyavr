@@ -648,6 +648,7 @@ class SonyDevice:
             return ucapi.StatusCodes.BAD_REQUEST
         volume_sony = volume * (self._volume_max - self._volume_min) / 100 + self._volume_min
         _LOG.debug("Sony AVR setting volume to %s", volume_sony)
+        self._volume = volume
         await self._volume_control.set_volume(int(volume_sony))
 
     @cmd_wrapper
@@ -655,6 +656,7 @@ class SonyDevice:
         """Send volume-up command to AVR."""
         volume_sony = self._volume + VOLUME_STEP * (self._volume_max - self._volume_min) / 100
         volume_sony = min(volume_sony, self._volume_max)
+        self._volume = min(self._volume + VOLUME_STEP, 100)
         await self._volume_control.set_volume(int(volume_sony))
 
     @cmd_wrapper
@@ -662,6 +664,7 @@ class SonyDevice:
         """Send volume-down command to AVR."""
         volume_sony = self._volume - VOLUME_STEP * (self._volume_max - self._volume_min) / 100
         volume_sony = max(volume_sony, self._volume_min)
+        self._volume = max(self._volume - VOLUME_STEP, 0)
         await self._volume_control.set_volume(int(volume_sony))
 
     @cmd_wrapper
