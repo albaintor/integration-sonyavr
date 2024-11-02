@@ -650,6 +650,7 @@ class SonyDevice:
         _LOG.debug("Sony AVR setting volume to %s", volume_sony)
         self._volume = volume
         await self._volume_control.set_volume(int(volume_sony))
+        self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
 
     @cmd_wrapper
     async def volume_up(self):
@@ -658,6 +659,7 @@ class SonyDevice:
         volume_sony = min(volume_sony, self._volume_max)
         self._volume = min(self._volume + VOLUME_STEP, 100)
         await self._volume_control.set_volume(int(volume_sony))
+        self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
 
     @cmd_wrapper
     async def volume_down(self):
@@ -666,6 +668,7 @@ class SonyDevice:
         volume_sony = max(volume_sony, self._volume_min)
         self._volume = max(self._volume - VOLUME_STEP, 0)
         await self._volume_control.set_volume(int(volume_sony))
+        self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
 
     @cmd_wrapper
     async def mute(self, muted: bool):
