@@ -104,7 +104,7 @@ def retry_with_timeout(*, timeout:float=5, bufferize=False
                 if obj._available:
                     await func(obj, *args, **kwargs)
                     return ucapi.StatusCodes.OK
-                return await retry_call_command(timeout, bufferize, func, obj, args, kwargs)
+                return await retry_call_command(timeout, bufferize, func, obj, *args, **kwargs)
             except SongpalException as ex:
                 if obj.state == States.OFF:
                     log_function = _LOG.debug
@@ -118,7 +118,7 @@ def retry_with_timeout(*, timeout:float=5, bufferize=False
                     ex,
                 )
                 try:
-                    return await retry_call_command(timeout, bufferize, func, obj, args, kwargs)
+                    return await retry_call_command(timeout, bufferize, func, obj, *args, **kwargs)
                 except SongpalException as ex:
                     log_function(
                         "Error calling %s on [%s(%s)]: %r",
