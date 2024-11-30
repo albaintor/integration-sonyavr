@@ -67,7 +67,7 @@ async def retry_call_command(timeout: float, bufferize: bool, func: Callable[Con
     # If the command should be bufferized (and retried later) add it to the list and returns OK
     if bufferize:
         _LOG.debug("Bufferize command %s %s", func, args)
-        obj._buffered_callbacks[time.time()] = obj._buffered_callbacks[time.time()] = {
+        obj._buffered_callbacks[time.time()] = {
             "object": obj,
             "function": func,
             "args": args,
@@ -75,7 +75,7 @@ async def retry_call_command(timeout: float, bufferize: bool, func: Callable[Con
         }
         return ucapi.StatusCodes.OK
     try:
-        # Else (no bufferize) wait (not more than "timeout" seconds) tor the connection to complete
+        # Else (no bufferize) wait (not more than "timeout" seconds) for the connection to complete
         async with asyncio.timeout(max(timeout - 1, 1)):
             await obj._connect_task
     except asyncio.TimeoutError:
@@ -90,8 +90,8 @@ async def retry_call_command(timeout: float, bufferize: bool, func: Callable[Con
     return ucapi.StatusCodes.OK
 
 
-def retry_with_timeout(*, timeout:float=5, bufferize=False
-) -> Callable[[Callable[_P, Awaitable[ucapi.StatusCodes]]],
+def retry(*, timeout:float=5, bufferize=False
+          ) -> Callable[[Callable[_P, Awaitable[ucapi.StatusCodes]]],
         Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]]:
 
     def decorator(func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]]
@@ -227,7 +227,7 @@ class SonyDevice:
                                 await value["function"](value["object"],*value["args"], **value["kwargs"])
                             # pylint: disable = W0718
                             except Exception as ex:
-                                _LOG.warning("Error while calling buffered %s", ex)
+                                _LOG.warning("Error while calling buffered command %s", ex)
                         else:
                             _LOG.debug("Buffered command too old %s, dropping it", value)
                 except RuntimeError:
@@ -686,12 +686,12 @@ class SonyDevice:
             pass
         return None
 
-    @retry_with_timeout(bufferize=True)
+    @retry(bufferize=True)
     async def power_on(self):
         """Send power-on command to AVR."""
         await self._receiver.set_power(True)
 
-    @retry_with_timeout(bufferize=True)
+    @retry(bufferize=True)
     async def power_off(self):
         """Send power-off command to AVR."""
         try:
@@ -703,7 +703,7 @@ class SonyDevice:
             else:
                 raise ex
 
-    @retry_with_timeout()
+    @retry()
     async def set_volume_level(self, volume: float | None):
         """Set volume level, range 0..100."""
         if volume is None:
@@ -714,7 +714,7 @@ class SonyDevice:
         await self._volume_control.set_volume(int(volume_sony))
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
 
-    @retry_with_timeout()
+    @retry()
     async def volume_up(self):
         """Send volume-up command to AVR."""
         volume_sony = self._volume + VOLUME_STEP * (self._volume_max - self._volume_min) / 100
@@ -723,7 +723,7 @@ class SonyDevice:
         await self._volume_control.set_volume(int(volume_sony))
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
 
-    @retry_with_timeout()
+    @retry()
     async def volume_down(self):
         """Send volume-down command to AVR."""
         volume_sony = self._volume - VOLUME_STEP * (self._volume_max - self._volume_min) / 100
@@ -732,34 +732,34 @@ class SonyDevice:
         await self._volume_control.set_volume(int(volume_sony))
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
 
-    @retry_with_timeout()
+    @retry()
     async def mute(self, muted: bool):
         """Send mute command to AVR."""
         _LOG.debug("Sending mute: %s", muted)
         await self._volume_control.set_mute(muted)
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.MUTED: muted})
 
-    @retry_with_timeout()
+    @retry()
     async def play_pause(self):
         """Send toggle-play-pause command to AVR."""
         await self._receiver.services["avContent"]["pausePlayingContent"]({})
 
-    @retry_with_timeout()
+    @retry()
     async def stop(self):
         """Send toggle-play-pause command to AVR."""
         await self._receiver.services["avContent"]["stopPlayingContent"]({})
 
-    @retry_with_timeout()
+    @retry()
     async def next(self):
         """Send next-track command to AVR."""
         await self._receiver.services["avContent"]["setPlayNextContent"]({})
 
-    @retry_with_timeout()
+    @retry()
     async def previous(self):
         """Send previous-track command to AVR."""
         await self._receiver.services["avContent"]["setPlayPreviousContent"]({})
 
-    @retry_with_timeout(bufferize=True)
+    @retry(bufferize=True)
     async def select_source(self, source: str | None):
         """Send input_source command to AVR."""
         if not source:
@@ -773,7 +773,7 @@ class SonyDevice:
                 return ucapi.StatusCodes.OK
         _LOG.error("Sony AVR unable to find output: %s", source)
 
-    @retry_with_timeout(bufferize=True)
+    @retry(bufferize=True)
     async def select_sound_mode(self, sound_mode: str | None):
         """Select sound mode."""
         if self._sound_fields is None:
@@ -783,7 +783,7 @@ class SonyDevice:
                 await self._receiver.set_sound_settings("soundField", opt.value)
                 break
 
-    @retry_with_timeout()
+    @retry()
     async def set_sound_settings(self, setting: str, value: any):
         """Select sound mode."""
         if setting is None or value is None:
