@@ -252,15 +252,9 @@ class SonyDevice:
                 try:
                     async with asyncio.timeout(5):
                         task = asyncio.create_task(self._receiver.get_supported_methods())
-                        await shield(task)
+                        await task
                 except (asyncio.TimeoutError, SongpalException) as ex:
                     _LOG.debug("Sony AVR Failed to reconnect: %s", ex)
-                    if task:
-                        try:
-                            task.cancel()
-                            task = None
-                        except CancelledError:
-                            pass
                 else:
                     # We need to inform Remote about the state in case we are coming
                     # back from a disconnected state and update internal data
