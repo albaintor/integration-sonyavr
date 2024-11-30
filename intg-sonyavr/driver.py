@@ -50,6 +50,7 @@ async def on_r2_connect_cmd() -> None:
 async def on_r2_disconnect_cmd():
     """Disconnect all configured receivers when the Remote Two sends the disconnect command."""
     # pylint: disable = W0212
+    _LOG.debug("Remote requests disconnection")
     if len(api._clients) == 0:
         for receiver in _configured_avrs.values():
             # start background task

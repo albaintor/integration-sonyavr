@@ -8,7 +8,7 @@ This module implements the AVR AVR receiver communication of the Remote Two inte
 import asyncio
 import logging
 import time
-from asyncio import AbstractEventLoop, CancelledError, Lock, Task
+from asyncio import AbstractEventLoop, CancelledError, Lock, Task, shield
 from collections import OrderedDict
 from enum import IntEnum
 from functools import wraps
@@ -77,7 +77,7 @@ async def retry_call_command(timeout: float, bufferize: bool, func: Callable[Con
     try:
         # Else (no bufferize) wait (not more than "timeout" seconds) for the connection to complete
         async with asyncio.timeout(max(timeout - 1, 1)):
-            await obj._connect_task
+            await shield(obj._connect_task)
     except asyncio.TimeoutError:
         # (Re)connection failed at least at given time
         if obj.state == States.OFF:
@@ -248,12 +248,11 @@ class SonyDevice:
         self._state = States.UNKNOWN
         self._notify_updated_data()
         while True:
-            await asyncio.sleep(DEFAULT_TIMEOUT)
             try:
                 try:
                     async with asyncio.timeout(5):
                         task = asyncio.create_task(self._receiver.get_supported_methods())
-                        await task
+                        await shield(task)
                 except (asyncio.TimeoutError, SongpalException) as ex:
                     _LOG.debug("Sony AVR Failed to reconnect: %s", ex)
                     if task:
@@ -291,6 +290,7 @@ class SonyDevice:
                 self._reconnect_retry,
                 CONNECTION_RETRIES,
             )
+            await asyncio.sleep(DEFAULT_TIMEOUT)
 
     async def async_activate_websocket(self):
         """Activate websocket for listening if wanted."""
