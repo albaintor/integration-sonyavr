@@ -616,7 +616,7 @@ class SonyDevice:
     @property
     def volume_level(self) -> float | None:
         """Volume level of the media player (0..100)."""
-        return 100 * abs((self._volume - self._volume_min) / (self._volume_max - self._volume_min))
+        return round(100 * abs((self._volume - self._volume_min) / (self._volume_max - self._volume_min)))
 
     @property
     def sound_mode_list(self) -> list[str]:
