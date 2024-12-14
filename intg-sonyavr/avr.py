@@ -182,6 +182,7 @@ class SonyDevice:
         self._connect_task: Task[None] | None = None
         self._check_device_task: Task[None] | None = None
         self._buffered_callbacks = {}
+        self._reconnect_retry = 0
         _LOG.debug(
             "Sony AVR created: %s (%s), connection keep alive = %s",
             device.name,
