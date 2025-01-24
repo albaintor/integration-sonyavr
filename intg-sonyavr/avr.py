@@ -712,18 +712,16 @@ class SonyDevice:
     @retry()
     async def volume_up(self):
         """Send volume-up command to AVR."""
-        volume_sony = self._volume + VOLUME_STEP * (self._volume_max - self._volume_min) / 100
-        volume_sony = min(volume_sony, self._volume_max)
         self._volume = min(self._volume + VOLUME_STEP, 100)
+        volume_sony = self._volume * (self._volume_max - self._volume_min) / 100 + self._volume_min
         await self._volume_control.set_volume(int(volume_sony))
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
 
     @retry()
     async def volume_down(self):
         """Send volume-down command to AVR."""
-        volume_sony = self._volume - VOLUME_STEP * (self._volume_max - self._volume_min) / 100
-        volume_sony = max(volume_sony, self._volume_min)
         self._volume = max(self._volume - VOLUME_STEP, 0)
+        volume_sony = self._volume * (self._volume_max - self._volume_min) / 100 + self._volume_min
         await self._volume_control.set_volume(int(volume_sony))
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
 
