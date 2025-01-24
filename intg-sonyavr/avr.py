@@ -428,7 +428,7 @@ class SonyDevice:
             volume = volumes[0]
             self._volume_max = volume.maxVolume
             self._volume_min = volume.minVolume
-            self._volume = volume.volume
+            self._volume = (volume.volume - self._volume_min)*100/(self._volume_max-self._volume_min)
             self._volume_control = volume
             self._attr_is_volume_muted = self._volume_control.is_muted
 
