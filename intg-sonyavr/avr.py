@@ -32,8 +32,6 @@ _LOG = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 5
 CONNECTION_RETRIES = 10
-VOLUME_STEP = 2
-
 BUFFER_LIFETIME = 30
 
 _SonyDeviceT = TypeVar("_SonyDeviceT", bound="SonyDevice")
@@ -164,9 +162,10 @@ class SonyDevice:
         self._interface_info: InterfaceInfo | None = None
         self._sysinfo: Sysinfo | None = None
         self._volume_control = None
-        self._volume_min = 0
-        self._volume_max = 1
-        self._volume = 0
+        self._volume_min:float = 0
+        self._volume_max:float = 1
+        self._volume:float = 0
+        self._volume_step = device.volume_step
         self._attr_is_volume_muted = False
         self._active_source = None
         self._sources = {}
@@ -295,8 +294,9 @@ class SonyDevice:
         async def _volume_changed(volume: VolumeChange):
             _LOG.debug("Sony AVR volume changed: %s", volume)
             attr_changed = {}
-            if self._volume != volume.volume:
-                self._volume = volume.volume
+            new_volume = float(volume.volume - self._volume_min)*100/float(self._volume_max-self._volume_min)
+            if self._volume != new_volume:
+                self._volume = new_volume
                 attr_changed[MediaAttr.VOLUME] = self.volume_level
             if self._attr_is_volume_muted != volume.mute:
                 self._attr_is_volume_muted = volume.mute
@@ -428,7 +428,7 @@ class SonyDevice:
             volume = volumes[0]
             self._volume_max = volume.maxVolume
             self._volume_min = volume.minVolume
-            self._volume = (volume.volume - self._volume_min)*100/(self._volume_max-self._volume_min)
+            self._volume = float(volume.volume - self._volume_min)*100/float(self._volume_max-self._volume_min)
             self._volume_control = volume
             self._attr_is_volume_muted = self._volume_control.is_muted
 
@@ -712,15 +712,15 @@ class SonyDevice:
     @retry()
     async def volume_up(self):
         """Send volume-up command to AVR."""
-        self._volume = min(self._volume + VOLUME_STEP, 100)
-        volume_sony = self._volume * (self._volume_max - self._volume_min) / 100 + self._volume_min
+        self._volume = min(self._volume + self._volume_step, 100)
+        volume_sony = self._volume * float(self._volume_max - self._volume_min) / 100 + self._volume_min
         await self._volume_control.set_volume(int(volume_sony))
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
 
     @retry()
     async def volume_down(self):
         """Send volume-down command to AVR."""
-        self._volume = max(self._volume - VOLUME_STEP, 0)
+        self._volume = max(self._volume - self._volume_step, 0)
         volume_sony = self._volume * (self._volume_max - self._volume_min) / 100 + self._volume_min
         await self._volume_control.set_volume(int(volume_sony))
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})

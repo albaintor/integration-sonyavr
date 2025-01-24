@@ -337,6 +337,16 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
                 },
                 "field": {"checkbox": {"value": False}},
             },
+            {
+                "id": "volume_step",
+                "label": {
+                    "en": "Volume step",
+                    "fr": "Pallier de volume",
+                },
+                "field": {
+                    "number": {"value": 2.0, "min": 0.5, "max": 10, "steps": 1, "decimals": 1, "unit": {"en": "dB"}}
+                },
+            },
         ],
     )
 
@@ -352,6 +362,13 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     """
     host = msg.input_values["choice"]
     always_on = msg.input_values.get("always_on") == "true"
+    volume_step = 2
+    try:
+        volume_step = float(msg.input_values.get("volume_step", 0.5))
+        if volume_step < 0.1 or volume_step > 10:
+            return SetupError(error_type=IntegrationSetupError.OTHER)
+    except ValueError:
+        return SetupError(error_type=IntegrationSetupError.OTHER)
     _LOG.debug(
         "Chosen Sony AVR: %s. Trying to connect and retrieve device information...",
         host,
@@ -400,6 +417,7 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
             name=interface_info.modelName,
             address=host,
             always_on=always_on,
+            volume_step=volume_step
         )
     )  # triggers SonyAVR instance creation
     config.devices.store()

@@ -45,6 +45,7 @@ class AvrDevice:
     name: str
     address: str
     always_on: bool
+    volume_step: float
 
 
 class _EnhancedJSONEncoder(json.JSONEncoder):
@@ -111,6 +112,7 @@ class Devices:
                 item.address = atv.address
                 item.name = atv.name
                 item.always_on = atv.always_on
+                item.volume_step = atv.volume_step
                 return self.store()
         return False
 
@@ -169,6 +171,7 @@ class Devices:
                     item.get("name"),
                     item.get("address"),
                     item.get("always_on", False),
+                    item.get("volume_step", 2.0)
                 )
                 self._config.append(device_instance)
             return True
