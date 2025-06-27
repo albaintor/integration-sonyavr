@@ -394,7 +394,7 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     # AVR device connection will be triggered with subscribe_entities request
     config.devices.add_or_update(device)  # triggers ATV instance update
     config.devices.store()
-    
+
     await asyncio.sleep(1)
 
     _LOG.info("Setup successfully completed for %s (%s)", device.name, device.id)

@@ -9,6 +9,7 @@ This module implements a Remote Two integration driver for Sony AVR receivers.
 import asyncio
 import logging
 import os
+import sys
 from typing import Any
 
 import avr
@@ -20,8 +21,10 @@ from config import avr_from_entity_id
 from ucapi.media_player import Attributes as MediaAttr
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
-_LOOP = asyncio.get_event_loop()
-
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+_LOOP = asyncio.new_event_loop()
+asyncio.set_event_loop(_LOOP)
 # Global variables
 api = ucapi.IntegrationAPI(_LOOP)
 # Map of avr_id -> SonyAVR instance

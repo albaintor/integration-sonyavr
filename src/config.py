@@ -94,8 +94,12 @@ class Devices:
         return self._data_path
 
     def all(self) -> Iterator[AvrDevice]:
-        """Get an iterator for all device configurations."""
+        """Get an iterator for all devicall()e configurations."""
         return iter(self._config)
+
+    def empty(self) -> bool:
+        """Return true if no devices configured."""
+        return len(self._config) == 0
 
     def contains(self, avr_id: str) -> bool:
         """Check if there's a device with the given device identifier."""
@@ -249,6 +253,8 @@ class Devices:
 
     async def handle_address_change(self):
         """Check for address change and update configuration"""
+        if devices.empty():
+            return
         if self._config_lock.locked():
             _LOG.debug("Check device change already in progress")
             return False
@@ -269,10 +275,10 @@ class Devices:
             found = False
             for device in _discovered_configs:
                 if device_config.mac_address_wifi and (device_config.mac_address_wifi == device.mac_address_wired
-                                                  or device_config.mac_address_wifi == device.mac_address_wifi):
+                                                       or device_config.mac_address_wifi == device.mac_address_wifi):
                     found = True
                 elif device_config.mac_address_wired and (device_config.mac_address_wired == device.mac_address_wired
-                                                     or device_config.mac_address_wired == device.mac_address_wifi):
+                                                          or device_config.mac_address_wired == device.mac_address_wifi):
                     found = True
 
                 if found:
@@ -288,14 +294,14 @@ class Devices:
             if not found:
                 _LOG.debug("Device %s (%s) not found, probably off", device_config.name, device_config.address)
 
-            if len(_devices_changed) > 0:
-                self.store()
-                _LOG.debug("Configuration updated")
-                if self._update_handler is not None:
-                    for device in _devices_changed:
-                        self._update_handler(device)
+        if len(_devices_changed) > 0:
+            self.store()
+            _LOG.debug("Configuration updated")
+            if self._update_handler is not None:
+                for device in _devices_changed:
+                    self._update_handler(device)
 
-            self._config_lock.release()
+        self._config_lock.release()
 
 
 devices: Devices | None = None
