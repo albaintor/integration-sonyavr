@@ -55,8 +55,10 @@ SONY_PLAYBACK_STATE_MAPPING = {
     "PAUSED": States.PAUSED,
 }
 
-async def retry_call_command(timeout: float, bufferize: bool, func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
-                 obj: _SonyDeviceT, *args: _P.args, **kwargs: _P.kwargs) -> ucapi.StatusCodes:
+
+async def retry_call_command(timeout: float, bufferize: bool,
+                             func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
+                             obj: _SonyDeviceT, *args: _P.args, **kwargs: _P.kwargs) -> ucapi.StatusCodes:
     """Retry call command when failed"""
     # Launch reconnection task if not active
     if not obj._connect_task:
@@ -88,12 +90,11 @@ async def retry_call_command(timeout: float, bufferize: bool, func: Callable[Con
     return ucapi.StatusCodes.OK
 
 
-def retry(*, timeout:float=5, bufferize=False
+def retry(*, timeout: float = 5, bufferize=False
           ) -> Callable[[Callable[_P, Awaitable[ucapi.StatusCodes]]],
-        Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]]:
-
+Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]]:
     def decorator(func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]]
-        ) -> Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]:
+                  ) -> Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]:
         @wraps(func)
         async def wrapper(obj: _SonyDeviceT, *args: _P.args, **kwargs: _P.kwargs) -> ucapi.StatusCodes:
             """Wrap all command methods."""
@@ -135,13 +136,14 @@ def retry(*, timeout:float=5, bufferize=False
 
     return decorator
 
+
 class SonyDevice:
     """Representing a Sony AVR Device."""
 
     def __init__(
-        self,
-        device: AvrDevice,
-        loop: AbstractEventLoop | None = None,
+            self,
+            device: AvrDevice,
+            loop: AbstractEventLoop | None = None,
     ):
         """Create instance with given IP or hostname of AVR."""
         # identifier from configuration
@@ -162,9 +164,9 @@ class SonyDevice:
         self._interface_info: InterfaceInfo | None = None
         self._sysinfo: Sysinfo | None = None
         self._volume_control = None
-        self._volume_min:float = 0
-        self._volume_max:float = 1
-        self._volume:float = 0
+        self._volume_min: float = 0
+        self._volume_max: float = 1
+        self._volume: float = 0
         self._volume_step = device.volume_step
         self._attr_is_volume_muted = False
         self._active_source = None
@@ -224,7 +226,7 @@ class SonyDevice:
                         if time.time() - timestamp <= BUFFER_LIFETIME:
                             _LOG.debug("Calling buffered command %s", value)
                             try:
-                                await value["function"](value["object"],*value["args"], **value["kwargs"])
+                                await value["function"](value["object"], *value["args"], **value["kwargs"])
                             # pylint: disable = W0718
                             except Exception as ex:
                                 _LOG.warning("Error while calling buffered command %s", ex)
@@ -294,7 +296,7 @@ class SonyDevice:
         async def _volume_changed(volume: VolumeChange):
             _LOG.debug("Sony AVR volume changed: %s", volume)
             attr_changed = {}
-            new_volume = float(volume.volume - self._volume_min)*100/float(self._volume_max-self._volume_min)
+            new_volume = float(volume.volume - self._volume_min) * 100 / float(self._volume_max - self._volume_min)
             if self._volume != new_volume:
                 self._volume = new_volume
                 attr_changed[MediaAttr.VOLUME] = self.volume_level
@@ -387,7 +389,6 @@ class SonyDevice:
         self.events.emit(Events.CONNECTED, self.id)
         self._notify_updated_data()
 
-
     async def connect(self):
         """Connect to device."""
         # pylint: disable = R0915
@@ -428,7 +429,7 @@ class SonyDevice:
             volume = volumes[0]
             self._volume_max = volume.maxVolume
             self._volume_min = volume.minVolume
-            self._volume = float(volume.volume - self._volume_min)*100/float(self._volume_max-self._volume_min)
+            self._volume = float(volume.volume - self._volume_min) * 100 / float(self._volume_max - self._volume_min)
             self._volume_control = volume
             self._attr_is_volume_muted = self._volume_control.is_muted
 
@@ -682,12 +683,13 @@ class SonyDevice:
         return None
 
     @retry(bufferize=True)
-    async def power_on(self):
+    async def power_on(self) -> ucapi.StatusCodes:
         """Send power-on command to AVR."""
         await self._receiver.set_power(True)
+        return ucapi.StatusCodes.OK
 
     @retry(bufferize=True)
-    async def power_off(self):
+    async def power_off(self) -> ucapi.StatusCodes:
         """Send power-off command to AVR."""
         try:
             await self._receiver.set_power(False)
@@ -697,9 +699,10 @@ class SonyDevice:
                 self._state = States.OFF
             else:
                 raise ex
+        return ucapi.StatusCodes.OK
 
     @retry()
-    async def set_volume_level(self, volume: float | None):
+    async def set_volume_level(self, volume: float | None) -> ucapi.StatusCodes:
         """Set volume level, range 0..100."""
         if volume is None:
             return ucapi.StatusCodes.BAD_REQUEST
@@ -708,52 +711,60 @@ class SonyDevice:
         self._volume = volume
         await self._volume_control.set_volume(int(volume_sony))
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
+        return ucapi.StatusCodes.OK
 
     @retry()
-    async def volume_up(self):
+    async def volume_up(self) -> ucapi.StatusCodes:
         """Send volume-up command to AVR."""
         self._volume = min(self._volume + self._volume_step, 100)
         volume_sony = self._volume * float(self._volume_max - self._volume_min) / 100 + self._volume_min
         await self._volume_control.set_volume(int(volume_sony))
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
+        return ucapi.StatusCodes.OK
 
     @retry()
-    async def volume_down(self):
+    async def volume_down(self) -> ucapi.StatusCodes:
         """Send volume-down command to AVR."""
         self._volume = max(self._volume - self._volume_step, 0)
         volume_sony = self._volume * (self._volume_max - self._volume_min) / 100 + self._volume_min
         await self._volume_control.set_volume(int(volume_sony))
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
+        return ucapi.StatusCodes.OK
 
     @retry()
-    async def mute(self, muted: bool):
+    async def mute(self, muted: bool) -> ucapi.StatusCodes:
         """Send mute command to AVR."""
         _LOG.debug("Sending mute: %s", muted)
         await self._volume_control.set_mute(muted)
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.MUTED: muted})
+        return ucapi.StatusCodes.OK
 
     @retry()
-    async def play_pause(self):
+    async def play_pause(self) -> ucapi.StatusCodes:
         """Send toggle-play-pause command to AVR."""
         await self._receiver.services["avContent"]["pausePlayingContent"]({})
+        return ucapi.StatusCodes.OK
 
     @retry()
-    async def stop(self):
+    async def stop(self) -> ucapi.StatusCodes:
         """Send toggle-play-pause command to AVR."""
         await self._receiver.services["avContent"]["stopPlayingContent"]({})
+        return ucapi.StatusCodes.OK
 
     @retry()
-    async def next(self):
+    async def next(self) -> ucapi.StatusCodes:
         """Send next-track command to AVR."""
         await self._receiver.services["avContent"]["setPlayNextContent"]({})
+        return ucapi.StatusCodes.OK
 
     @retry()
-    async def previous(self):
+    async def previous(self) -> ucapi.StatusCodes:
         """Send previous-track command to AVR."""
         await self._receiver.services["avContent"]["setPlayPreviousContent"]({})
+        return ucapi.StatusCodes.OK
 
     @retry(bufferize=True)
-    async def select_source(self, source: str | None):
+    async def select_source(self, source: str | None) -> ucapi.StatusCodes:
         """Send input_source command to AVR."""
         if not source:
             return ucapi.StatusCodes.BAD_REQUEST
@@ -765,9 +776,10 @@ class SonyDevice:
                 await out.activate()
                 return ucapi.StatusCodes.OK
         _LOG.error("Sony AVR unable to find output: %s", source)
+        return ucapi.StatusCodes.BAD_REQUEST
 
     @retry(bufferize=True)
-    async def select_sound_mode(self, sound_mode: str | None):
+    async def select_sound_mode(self, sound_mode: str | None) -> ucapi.StatusCodes:
         """Select sound mode."""
         if self._sound_fields is None:
             return ucapi.StatusCodes.BAD_REQUEST
@@ -775,10 +787,12 @@ class SonyDevice:
             if opt.title == sound_mode:
                 await self._receiver.set_sound_settings("soundField", opt.value)
                 break
+        return ucapi.StatusCodes.OK
 
     @retry()
-    async def set_sound_settings(self, setting: str, value: any):
+    async def set_sound_settings(self, setting: str, value: any) -> ucapi.StatusCodes:
         """Select sound mode."""
         if setting is None or value is None:
             return ucapi.StatusCodes.BAD_REQUEST
         await self._receiver.set_sound_settings(setting, value)
+        return ucapi.StatusCodes.OK

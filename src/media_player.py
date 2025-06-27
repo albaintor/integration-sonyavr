@@ -85,7 +85,7 @@ class SonyMediaPlayer(MediaPlayer):
         if self._receiver is None:
             _LOG.warning("No AVR instance for entity: %s", self.id)
             return StatusCodes.SERVICE_UNAVAILABLE
-
+        res = StatusCodes.NOT_IMPLEMENTED
         if cmd_id == Commands.VOLUME:
             res = await self._receiver.set_volume_level(params.get("volume"))
         elif cmd_id == Commands.VOLUME_UP:
