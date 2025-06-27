@@ -49,7 +49,7 @@ For running a separate integration driver on your network for Remote Two, the co
 ### Run
 
 ```shell
-python3 intg-sonyavr/driver.py
+python3 src/driver.py
 ```
 
 See
@@ -83,7 +83,7 @@ docker run --rm --name builder \
     docker.io/unfoldedcircle/r2-pyinstaller:3.11.6  \
     bash -c \
       "python -m pip install -r requirements.txt && \
-      pyinstaller --clean --onefile --name intg-sonyavr intg-sonyavr/driver.py"
+      pyinstaller --clean --onefile --name src src/driver.py"
 ```
 
 ### aarch64 Linux / Mac
@@ -97,7 +97,7 @@ docker run --rm --name builder \
     docker.io/unfoldedcircle/r2-pyinstaller:3.11.6  \
     bash -c \
       "python -m pip install -r requirements.txt && \
-      pyinstaller --clean --onefile --name intg-sonyavr intg-sonyavr/driver.py"
+      pyinstaller --clean --onefile --name src src/driver.py"
 ```
 
 ## Versioning

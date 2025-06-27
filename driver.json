@@ -1,15 +1,15 @@
 {
   "driver_id": "sonyavr_driver",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "min_core_api": "0.20.0",
   "name": {
     "en": "Sony AVR Network Receivers"
   },
   "icon": "custom:sony.png",
   "description": {
-    "en": "Control your Sony AVRs with Remote Two or 3.",
+    "en": "Control your Sony AVRs with Remote Two/3.",
     "de": "Steuere Sony AVRs mit Remote Two/3.",
-    "fr": "Contrôler Sony AVRs avec Remote Two ou 3."
+    "fr": "Contrôler Sony AVRs avec Remote Two/3."
   },
   "developer": {
     "name": "Albaintor",
@@ -36,12 +36,12 @@
             "value": {
               "en": "The integration will discover your Sony AVRs on your network.",
               "de": "Diese Integration wirdSony AVRs im Netzwerk finden.",
-              "fr": "Cette intégration trouvera des amplis Sony dans le réseau."
+              "fr": "Cette intégration trouvera les amplis Sony dans le réseau."
             }
           }
         }
       }
     ]
   },
-  "release_date": "2024-11-29"
+  "release_date": "2025-06-27"
 }

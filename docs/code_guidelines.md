@@ -22,10 +22,10 @@ The following tests are run as GitHub action for each push on the main branch an
 They can also be run anytime on a local developer machine:
 
 ```shell
-python -m pylint intg-sonyavr
-python -m flake8 intg-sonyavr --count --show-source --statistics
+python -m pylint src
+python -m flake8 src --count --show-source --statistics
 python -m isort intg-denonavr/. --check --verbose 
-python -m black intg-sonyavr --check --verbose --line-length 120
+python -m black src --check --verbose --line-length 120
 ```
 
 Linting integration in PyCharm/IntelliJ IDEA:
@@ -36,7 +36,7 @@ Linting integration in PyCharm/IntelliJ IDEA:
 ### Format Code
 
 ```shell
-python -m black intg-sonyavr --line-length 120
+python -m black src --line-length 120
 ```
 
 PyCharm/IntelliJ IDEA integration:

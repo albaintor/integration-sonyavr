@@ -161,8 +161,8 @@ async def on_avr_connected(avr_id: str):
 
         if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
             if (
-                configured_entity.attributes[ucapi.media_player.Attributes.STATE]
-                == ucapi.media_player.States.UNAVAILABLE
+                    configured_entity.attributes[ucapi.media_player.Attributes.STATE]
+                    == ucapi.media_player.States.UNAVAILABLE
             ):
                 # TODO why STANDBY?
                 api.configured_entities.update_attributes(
@@ -330,6 +330,12 @@ def on_device_added(device: config.AvrDevice) -> None:
     _configure_new_avr(device, connect=False)
 
 
+def on_device_updated(device: config.AvrDevice) -> None:
+    """Handle an updated device in the configuration."""
+    _LOG.debug("Device config updated: %s, reconnect with new configuration", device)
+    _configure_new_avr(device, connect=True)
+
+
 def on_device_removed(device: config.AvrDevice | None) -> None:
     """Handle a removed device in the configuration."""
     if device is None:
@@ -360,15 +366,17 @@ async def main():
     logging.basicConfig()
     level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
     logging.getLogger("avr").setLevel(level)
-    logging.getLogger("discover").setLevel(level)
+    #logging.getLogger("discover").setLevel(level)
     logging.getLogger("driver").setLevel(level)
     logging.getLogger("media_player").setLevel(level)
-    logging.getLogger("receiver").setLevel(level)
+    logging.getLogger("config").setLevel(level)
     logging.getLogger("setup_flow").setLevel(level)
 
-    config.devices = config.Devices(api.config_dir_path, on_device_added, on_device_removed)
+    config.devices = config.Devices(api.config_dir_path, on_device_added, on_device_removed, on_device_updated)
     for device in config.devices.all():
         _configure_new_avr(device, connect=False)
+
+    await _LOOP.create_task(config.devices.handle_address_change())
 
     # _LOOP.create_task(receiver_status_poller())
     for receiver in _configured_avrs.values():

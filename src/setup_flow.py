@@ -26,6 +26,8 @@ from ucapi import (
     UserDataResponse,
 )
 
+from const import DEFAULT_PORT
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -37,8 +39,6 @@ class SetupSteps(IntEnum):
     DISCOVER = 2
     DEVICE_CHOICE = 3
 
-
-DEFAULT_PORT = 10000
 
 _setup_step = SetupSteps.INIT
 _cfg_add_device: bool = False
@@ -107,7 +107,7 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
 
 
 async def handle_driver_setup(
-    _msg: DriverSetupRequest,
+        _msg: DriverSetupRequest,
 ) -> RequestUserInput | SetupError:
     """
     Start driver setup.
@@ -210,7 +210,7 @@ async def handle_driver_setup(
 
 
 async def handle_configuration_mode(
-    msg: UserDataResponse,
+        msg: UserDataResponse,
 ) -> RequestUserInput | SetupComplete | SetupError:
     """
     Process user data response in a setup process.
@@ -373,58 +373,27 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
         "Chosen Sony AVR: %s. Trying to connect and retrieve device information...",
         host,
     )
+
     try:
-        if not host.startswith("http://"):
-            host = f"http://{host}"
-
-        result = urlparse(host)
-        path = result.path
-        port = result.port
-        if not path:
-            path = "/sony"
-        if not port:
-            port = DEFAULT_PORT
-        host = f"{result.scheme}://{result.hostname}:{port}{path}"
-
-        # simple connection check
-        device = Device(host)
-        await device.get_supported_methods()
-        interface_info = await device.get_interface_information()
-        system_info = await device.get_system_info()
+        device: AvrDevice = await config.Devices.extract_device_info(host)
     except SongpalException as ex:
         _LOG.error("Cannot connect to %s: %s", host, ex)
         return SetupError(error_type=IntegrationSetupError.CONNECTION_REFUSED)
 
-    assert device
-    assert system_info
-
-    unique_id = system_info.serialNumber
-    if unique_id is None:
-        unique_id = system_info.macAddr
-    if unique_id is None:
-        unique_id = system_info.wirelessMacAddr
-
-    if unique_id is None:
+    if device is None or device.id is None:
         _LOG.error(
             "Could not get mac address of host %s: required to create a unique device",
             host,
         )
         return SetupError(error_type=IntegrationSetupError.OTHER)
 
-    config.devices.add(
-        AvrDevice(
-            id=unique_id,
-            name=interface_info.modelName,
-            address=host,
-            always_on=always_on,
-            volume_step=volume_step
-        )
-    )  # triggers SonyAVR instance creation
+    device.always_on = always_on
+    device.volume_step = volume_step
     config.devices.store()
 
     # AVR device connection will be triggered with subscribe_entities request
 
     await asyncio.sleep(1)
 
-    _LOG.info("Setup successfully completed for %s (%s)", interface_info.modelName, unique_id)
+    _LOG.info("Setup successfully completed for %s (%s)", device.name, device.id)
     return SetupComplete()
