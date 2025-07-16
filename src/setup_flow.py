@@ -38,10 +38,12 @@ class SetupSteps(IntEnum):
     CONFIGURATION_MODE = 1
     DISCOVER = 2
     DEVICE_CHOICE = 3
+    RECONFIGURE = 4
 
 
 _setup_step = SetupSteps.INIT
 _cfg_add_device: bool = False
+_reconfigured_device: AvrDevice | None = None
 # pylint: disable = C0301
 # flake8: noqa
 
@@ -94,6 +96,8 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
             return await _handle_discovery(msg)
         if _setup_step == SetupSteps.DEVICE_CHOICE and "choice" in msg.input_values:
             return await handle_device_choice(msg)
+        if _setup_step == SetupSteps.RECONFIGURE:
+            return await _handle_device_reconfigure(msg)
         _LOG.error("No or invalid user response was received: %s", msg)
     elif isinstance(msg, AbortDriverSetup):
         _LOG.info("Setup was aborted with code: %s", msg.error)
@@ -122,6 +126,10 @@ async def handle_driver_setup(
 
     reconfigure = _msg.reconfigure
     _LOG.debug("Starting driver setup, reconfigure=%s", reconfigure)
+
+    # workaround for web-configurator not picking up first response
+    await asyncio.sleep(1)
+
     if reconfigure:
         _setup_step = SetupSteps.CONFIGURATION_MODE
 
@@ -145,6 +153,15 @@ async def handle_driver_setup(
 
         # add remove & reset actions if there's at least one configured device
         if dropdown_devices:
+            dropdown_actions.append(
+                {
+                    "id": "configure",
+                    "label": {
+                        "en": "Configure selected device",
+                        "fr": "Configurer l'appareil sélectionné",
+                    },
+                },
+            )
             dropdown_actions.append(
                 {
                     "id": "remove",
@@ -223,6 +240,7 @@ async def handle_configuration_mode(
     """
     global _setup_step
     global _cfg_add_device
+    global _reconfigured_device
 
     action = msg.input_values["action"]
 
@@ -241,6 +259,49 @@ async def handle_configuration_mode(
             return SetupComplete()
         case "reset":
             config.devices.clear()  # triggers device instance removal
+        case "configure":
+            # Reconfigure device if the identifier has changed
+            choice = msg.input_values["choice"]
+            selected_device = config.devices.get(choice)
+            if not selected_device:
+                _LOG.warning("Can not configure device from configuration: %s", choice)
+                return SetupError(error_type=IntegrationSetupError.OTHER)
+
+            _setup_step = SetupSteps.RECONFIGURE
+            _reconfigured_device = selected_device
+
+            return RequestUserInput(
+                {
+                    "en": "Configure your Sony AVR",
+                    "fr": "Configurez votre ampli Sony",
+                },
+                [
+                    {
+                        "field": {"text": {"value": _reconfigured_device.address}},
+                        "id": "address",
+                        "label": {"en": "IP address", "de": "IP-Adresse", "fr": "Adresse IP"},
+                    },
+                    {
+                        "id": "always_on",
+                        "label": {
+                            "en": "Keep connection alive (faster initialization, but consumes more battery)",
+                            "fr": "Conserver la connexion active (lancement plus rapide, mais consomme plus de batterie)",
+                        },
+                        "field": {"checkbox": {"value": _reconfigured_device.always_on}},
+                    },
+                    {
+                        "id": "volume_step",
+                        "label": {
+                            "en": "Volume step",
+                            "fr": "Pallier de volume",
+                        },
+                        "field": {
+                            "number": {"value": _reconfigured_device.volume_step, "min": 1.0, "max": 10, "steps": 1, "decimals": 1,
+                                       "unit": {"en": "dB"}}
+                        },
+                    }
+                ],
+            )
         case _:
             _LOG.error("Invalid configuration action: %s", action)
             return SetupError(error_type=IntegrationSetupError.OTHER)
@@ -344,7 +405,7 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
                     "fr": "Pallier de volume",
                 },
                 "field": {
-                    "number": {"value": 2.0, "min": 0.5, "max": 10, "steps": 1, "decimals": 1, "unit": {"en": "dB"}}
+                    "number": {"value": 2.0, "min": 1.0, "max": 10, "steps": 1, "decimals": 1, "unit": {"en": "dB"}}
                 },
             },
         ],
@@ -362,9 +423,8 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     """
     host = msg.input_values["choice"]
     always_on = msg.input_values.get("always_on") == "true"
-    volume_step = 2
     try:
-        volume_step = float(msg.input_values.get("volume_step", 0.5))
+        volume_step = float(msg.input_values.get("volume_step", 1.0))
         if volume_step < 0.1 or volume_step > 10:
             return SetupError(error_type=IntegrationSetupError.OTHER)
     except ValueError:
@@ -398,4 +458,37 @@ async def handle_device_choice(msg: UserDataResponse) -> SetupComplete | SetupEr
     await asyncio.sleep(1)
 
     _LOG.info("Setup successfully completed for %s (%s)", device.name, device.id)
+    return SetupComplete()
+
+
+async def _handle_device_reconfigure(msg: UserDataResponse) -> SetupComplete | SetupError:
+    """
+    Process reconfiguration of a registered Android TV device.
+
+    :param msg: response data from the requested user data
+    :return: the setup action on how to continue: SetupComplete after updating configuration
+    """
+    # flake8: noqa:F824
+    # pylint: disable=W0602
+    global _reconfigured_device
+
+    if _reconfigured_device is None:
+        return SetupError()
+
+    address = msg.input_values.get("address", "")
+    try:
+        volume_step = float(msg.input_values.get("volume_step", 1.0))
+    except ValueError:
+        return SetupError(error_type=IntegrationSetupError.OTHER)
+    always_on = msg.input_values.get("always_on") == "true"
+
+    _LOG.debug("User has changed configuration")
+    _reconfigured_device.address = address
+    _reconfigured_device.volume_step = volume_step
+    _reconfigured_device.always_on = always_on
+
+    config.devices.add_or_update(_reconfigured_device)  # triggers ATV instance update
+    await asyncio.sleep(1)
+    _LOG.info("Setup successfully completed for %s", _reconfigured_device.name)
+
     return SetupComplete()
