@@ -2,12 +2,18 @@ import asyncio
 import logging
 import sys
 
+from songpal import SongpalException
 from songpal.discovery import DiscoveredDevice, Discover
+
+import config
+from avr import SonyDevice
+from config import AvrDevice
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 _LOOP = asyncio.new_event_loop()
 asyncio.set_event_loop(_LOOP)
+_LOG: logging.Logger
 
 async def sony_avrs() -> list[DiscoveredDevice]:
     """
@@ -35,7 +41,25 @@ async def sony_avrs() -> list[DiscoveredDevice]:
         return []
 
 async def main():
-    await sony_avrs()
+    global _LOG
+    devices = await sony_avrs()
+    host = devices[0].endpoint if len(devices) > 0 else "192.168.1.51"
+    try:
+        device: AvrDevice = await config.Devices.extract_device_info(host)
+    except SongpalException as ex:
+        _LOG.error("Cannot connect to %s: %s", host, ex)
+        return
+
+    if device is None or device.id is None:
+        _LOG.error(
+            "Could not get mac address of host %s: required to create a unique device",
+            host,
+        )
+
+    client: SonyDevice = SonyDevice(device, _LOOP)
+    await client.connect()
+    await asyncio.sleep(5)
+    _LOG.info("Volume : %s (%s - %s)", client.volume_level, client._volume_min, client._volume_max)
     _LOG.debug("END")
 
 
