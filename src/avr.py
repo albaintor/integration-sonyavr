@@ -770,7 +770,15 @@ class SonyDevice:
             return ucapi.StatusCodes.BAD_REQUEST
         _LOG.debug("Sony AVR set input: %s", source)
         # switch to work.
-        await self._receiver.set_power(True)
+        try:
+            await self._receiver.set_power(True)
+        except SongpalException as ex:
+            # Songpal throws an IllegalArgument (Code 3) if the device is already on
+            if ex.code == 3:
+                _LOG.debug("Sony AVR is already on")
+            else:
+                _LOG.error("Failed to turn on Sony AVR: %s", ex)
+                return ucapi.StatusCodes.BAD_REQUEST
         for out in self._sources.values():
             if out.title == source:
                 await out.activate()
