@@ -15,7 +15,7 @@ from functools import wraps
 from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, TypeVar
 
 import ucapi
-from config import AvrDevice
+from config import DeviceInstance
 from pyee.asyncio import AsyncIOEventEmitter
 from songpal import (
     ConnectChange,
@@ -142,7 +142,7 @@ class SonyDevice:
 
     def __init__(
             self,
-            device: AvrDevice,
+            device: DeviceInstance,
             loop: AbstractEventLoop | None = None,
     ):
         """Create instance with given IP or hostname of AVR."""

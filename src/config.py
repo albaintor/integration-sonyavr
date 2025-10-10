@@ -32,7 +32,7 @@ def create_entity_id(avr_id: str, entity_type: EntityTypes) -> str:
     return f"{entity_type.value}.{avr_id}"
 
 
-def avr_from_entity_id(entity_id: str) -> str | None:
+def device_from_entity_id(entity_id: str) -> str | None:
     """
     Return the avr_id prefix of an entity_id.
 
@@ -45,7 +45,7 @@ def avr_from_entity_id(entity_id: str) -> str | None:
 
 
 @dataclass
-class AvrDevice:
+class DeviceInstance:
     """Sony device configuration."""
 
     # pylint: disable = W0622
@@ -56,6 +56,17 @@ class AvrDevice:
     volume_step: float
     mac_address_wired: str | None
     mac_address_wifi: str | None
+
+    def __init__(self, id, name, address, always_on, volume_step, mac_address_wired, mac_address_wifi):
+        """Device instance registry."""
+        # pylint: disable = W0622,R0917
+        self.id = id
+        self.name = name
+        self.address = address
+        self.always_on = always_on
+        self.volume_step = volume_step
+        self.mac_address_wired = mac_address_wired
+        self.mac_address_wifi = mac_address_wifi
 
 
 class _EnhancedJSONEncoder(json.JSONEncoder):
@@ -71,9 +82,9 @@ class Devices:
     """Integration driver configuration class. Manages all configured Sony devices."""
 
     def __init__(self, data_path: str,
-                 add_handler: Callable[[AvrDevice], None],
-                 remove_handler: Callable[[AvrDevice | None], None],
-                 update_handler: Callable[[AvrDevice], None]):
+                 add_handler: Callable[[DeviceInstance], None],
+                 remove_handler: Callable[[DeviceInstance | None], None],
+                 update_handler: Callable[[DeviceInstance], None]):
         """
         Create a configuration instance for the given configuration path.
 
@@ -81,7 +92,7 @@ class Devices:
         """
         self._data_path: str = data_path
         self._cfg_file_path: str = os.path.join(data_path, _CFG_FILENAME)
-        self._config: list[AvrDevice] = []
+        self._config: list[DeviceInstance] = []
         self._add_handler = add_handler
         self._remove_handler = remove_handler
         self._update_handler = update_handler
@@ -93,7 +104,7 @@ class Devices:
         """Return the configuration path."""
         return self._data_path
 
-    def all(self) -> Iterator[AvrDevice]:
+    def all(self) -> Iterator[DeviceInstance]:
         """Get an iterator for all devicall()e configurations."""
         return iter(self._config)
 
@@ -108,7 +119,7 @@ class Devices:
                 return True
         return False
 
-    def add_or_update(self, atv: AvrDevice) -> None:
+    def add_or_update(self, atv: DeviceInstance) -> None:
         """Add a new configured device."""
         if self.contains(atv.id):
             _LOG.debug("Existing config %s, updating it %s", atv.id, atv)
@@ -122,7 +133,7 @@ class Devices:
         if self._add_handler is not None:
             self._add_handler(atv)
 
-    def get(self, avr_id: str) -> AvrDevice | None:
+    def get(self, avr_id: str) -> DeviceInstance | None:
         """Get device configuration for given identifier."""
         for item in self._config:
             if item.id == avr_id:
@@ -130,7 +141,7 @@ class Devices:
                 return dataclasses.replace(item)
         return None
 
-    def update(self, device: AvrDevice) -> bool:
+    def update(self, device: DeviceInstance) -> bool:
         """Update a configured Sony device and persist configuration."""
         for item in self._config:
             if item.id == device.id:
@@ -182,6 +193,65 @@ class Devices:
 
         return False
 
+    def export(self) -> str:
+        """
+        Export the configuration file to a string
+
+        :return: JSON formatted string of the current configuration
+        """
+        return json.dumps(self._config, ensure_ascii=False, cls=_EnhancedJSONEncoder)
+
+    def import_config(self, updated_config: str) -> bool:
+        """
+        Import the updated configuration
+        """
+        config_backup = self._config.copy()
+        try:
+            data = json.loads(updated_config)
+            self._config.clear()
+            for item in data:
+                try:
+                    self._config.append(DeviceInstance(**item))
+                except TypeError as ex:
+                    _LOG.warning("Invalid configuration entry will be ignored: %s", ex)
+
+            _LOG.debug("Configuration to import : %s", self._config)
+
+            # Now trigger events add/update/removal of devices based on old / updated list
+            for device in self._config:
+                found = False
+                for old_device in config_backup:
+                    if old_device.id == device.id:
+                        if self._update_handler is not None:
+                            self._update_handler(device)
+                        found = True
+                        break
+                if not found and self._add_handler is not None:
+                    self._add_handler(device)
+            for old_device in config_backup:
+                found = False
+                for device in self._config:
+                    if old_device.id == device.id:
+                        found = True
+                        break
+                if not found and self._remove_handler is not None:
+                    self._remove_handler(old_device)
+
+            with open(self._cfg_file_path, "w+", encoding="utf-8") as f:
+                json.dump(self._config, f, ensure_ascii=False, cls=_EnhancedJSONEncoder)
+            return True
+        except Exception as ex:
+            _LOG.error(
+                "Cannot import the updated configuration %s, keeping existing configuration : %s", updated_config, ex
+            )
+            try:
+                # Restore current configuration
+                self._config = config_backup
+                self.store()
+            except Exception:
+                pass
+        return False
+
     def load(self) -> bool:
         """
         Load the config into the config global variable.
@@ -193,7 +263,7 @@ class Devices:
                 data = json.load(f)
             for item in data:
                 # not using AtvDevice(**item) to be able to migrate old configuration files with missing attributes
-                device_instance = AvrDevice(
+                device_instance = DeviceInstance(
                     item.get("id"),
                     item.get("name"),
                     item.get("address"),
@@ -212,7 +282,7 @@ class Devices:
         return False
 
     @staticmethod
-    async def extract_device_info(host: str) -> AvrDevice:
+    async def extract_device_info(host: str) -> DeviceInstance:
         """Extract device information from host."""
         if not host.startswith("http://"):
             host = f"http://{host}"
@@ -241,7 +311,7 @@ class Devices:
         if unique_id is None:
             unique_id = system_info.wirelessMacAddr
 
-        return AvrDevice(
+        return DeviceInstance(
             id=unique_id,
             name=interface_info.modelName,
             address=host,
@@ -262,8 +332,8 @@ class Devices:
         # Only one instance of devices change
         await self._config_lock.acquire()
         _discovered_devices = await discover.sony_avrs()
-        _discovered_configs: [AvrDevice] = []
-        _devices_changed: [AvrDevice] = []
+        _discovered_configs: [DeviceInstance] = []
+        _devices_changed: [DeviceInstance] = []
 
         for _discovered_device in _discovered_devices:
             try:

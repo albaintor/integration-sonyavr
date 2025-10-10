@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 import avr
-from config import AvrDevice, create_entity_id
+from config import DeviceInstance, create_entity_id
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
 from ucapi.media_player import Attributes, Commands, DeviceClasses, Features, States, Options
 
@@ -21,7 +21,7 @@ _LOG = logging.getLogger(__name__)
 class SonyMediaPlayer(MediaPlayer):
     """Representation of a Sony Media Player entity."""
 
-    def __init__(self, device: AvrDevice, receiver: avr.SonyDevice):
+    def __init__(self, device: DeviceInstance, receiver: avr.SonyDevice):
         """Initialize the class."""
         self._receiver: avr.SonyDevice = receiver
 

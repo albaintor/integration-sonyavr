@@ -7,7 +7,7 @@ from songpal.discovery import DiscoveredDevice, Discover
 
 import config
 from avr import SonyDevice
-from config import AvrDevice
+from config import DeviceInstance
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -45,7 +45,7 @@ async def main():
     devices = await sony_avrs()
     host = devices[0].endpoint if len(devices) > 0 else "192.168.1.51"
     try:
-        device: AvrDevice = await config.Devices.extract_device_info(host)
+        device: DeviceInstance = await config.Devices.extract_device_info(host)
     except SongpalException as ex:
         _LOG.error("Cannot connect to %s: %s", host, ex)
         return
