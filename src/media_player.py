@@ -1,18 +1,25 @@
 """
 Media-player entity functions.
 
-:copyright: (c) 2023 by Unfolded Circle ApS.
+:copyright: (c) 2023 by Albaintor
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
 import logging
 from typing import Any
 
+from ucapi import EntityTypes, MediaPlayer, StatusCodes
+from ucapi.media_player import (
+    Attributes,
+    Commands,
+    DeviceClasses,
+    Features,
+    Options,
+    States,
+)
+
 import avr
 from config import DeviceInstance, create_entity_id
-from ucapi import EntityTypes, MediaPlayer, StatusCodes
-from ucapi.media_player import Attributes, Commands, DeviceClasses, Features, States, Options
-
 from const import SIMPLE_COMMANDS
 
 _LOG = logging.getLogger(__name__)
@@ -42,24 +49,7 @@ class SonyMediaPlayer(MediaPlayer):
             Features.PREVIOUS,
             Features.PLAY_PAUSE,
         ]
-        attributes = {
-            Attributes.STATE: receiver.state,
-            Attributes.VOLUME: receiver.volume_level,
-            Attributes.MUTED: receiver.is_volume_muted,
-            Attributes.SOURCE: receiver.source if receiver.source else "",
-            Attributes.SOURCE_LIST: (receiver.source_list if receiver.source_list else []),
-            Attributes.SOUND_MODE: receiver.sound_mode,
-            Attributes.SOUND_MODE_LIST: receiver.sound_mode_list,
-            Attributes.MEDIA_IMAGE_URL: receiver.media_image_url,
-            Attributes.MEDIA_TITLE: receiver.media_title,
-            Attributes.MEDIA_ARTIST: receiver.media_artist,
-            Attributes.MEDIA_ALBUM: receiver.media_album_name,
-        }
-        # # use sound mode support & name from configuration: receiver might not yet be connected
-        # if device.support_sound_mode:
-        #     features.append(Features.SELECT_SOUND_MODE)
-        #     attributes[Attributes.SOUND_MODE] = ""
-        #     attributes[Attributes.SOUND_MODE_LIST] = []
+        attributes = receiver.attributes
 
         super().__init__(
             entity_id,
@@ -67,7 +57,7 @@ class SonyMediaPlayer(MediaPlayer):
             features,
             attributes,
             device_class=DeviceClasses.RECEIVER,
-            options={Options.SIMPLE_COMMANDS: SIMPLE_COMMANDS}
+            options={Options.SIMPLE_COMMANDS: SIMPLE_COMMANDS},
         )
 
     async def command(self, cmd_id: str, params: dict[str, Any] | None = None) -> StatusCodes:
@@ -85,7 +75,7 @@ class SonyMediaPlayer(MediaPlayer):
         if self._receiver is None:
             _LOG.warning("No AVR instance for entity: %s", self.id)
             return StatusCodes.SERVICE_UNAVAILABLE
-        res = StatusCodes.NOT_IMPLEMENTED
+        res: StatusCodes = StatusCodes.NOT_IMPLEMENTED
         if cmd_id == Commands.VOLUME:
             res = await self._receiver.set_volume_level(params.get("volume"))
         elif cmd_id == Commands.VOLUME_UP:
@@ -93,7 +83,7 @@ class SonyMediaPlayer(MediaPlayer):
         elif cmd_id == Commands.VOLUME_DOWN:
             res = await self._receiver.volume_down()
         elif cmd_id == Commands.MUTE_TOGGLE:
-            res = await self._receiver.mute(not self.attributes[Attributes.MUTED])
+            res = await self._receiver.mute(not self.attributes.get(Attributes.MUTED, False))
         elif cmd_id == Commands.ON:
             res = await self._receiver.power_on()
         elif cmd_id == Commands.OFF:
@@ -110,13 +100,13 @@ class SonyMediaPlayer(MediaPlayer):
             res = await self._receiver.play_pause()
         elif cmd_id in self.options[Options.SIMPLE_COMMANDS]:
             if cmd_id == "ZONE_HDMI_OUTPUT_AB":
-                res = await self._receiver.set_sound_settings('hdmiOutput', 'hdmi_AB')
+                res = await self._receiver.set_sound_settings("hdmiOutput", "hdmi_AB")
             elif cmd_id == "ZONE_HDMI_OUTPUT_A":
-                res = await self._receiver.set_sound_settings('hdmiOutput', 'hdmi_A')
+                res = await self._receiver.set_sound_settings("hdmiOutput", "hdmi_A")
             elif cmd_id == "ZONE_HDMI_OUTPUT_B":
-                res = await self._receiver.set_sound_settings('hdmiOutput', 'hdim_B')
+                res = await self._receiver.set_sound_settings("hdmiOutput", "hdim_B")  # Typo in the device software
             elif cmd_id == "ZONE_HDMI_OUTPUT_OFF":
-                res = await self._receiver.set_sound_settings('hdmiOutput', 'off')
+                res = await self._receiver.set_sound_settings("hdmiOutput", "off")
         else:
             return StatusCodes.NOT_IMPLEMENTED
 

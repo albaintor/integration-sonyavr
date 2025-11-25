@@ -1,18 +1,14 @@
 """
 Setup flow for Sony AVR integration.
 
-:copyright: (c) 2023 by Unfolded Circle ApS.
+:copyright: (c) 2023 by Albaintor
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
 import asyncio
 import logging
 from enum import IntEnum
-from urllib.parse import urlparse
 
-import config
-import discover
-from config import DeviceInstance
 from songpal import Device, SongpalException
 from ucapi import (
     AbortDriverSetup,
@@ -26,7 +22,10 @@ from ucapi import (
     UserDataResponse,
 )
 
-from const import DEFAULT_PORT
+import config
+import discover
+from config import DeviceInstance
+from const import DEFAULT_VOLUME_STEP
 
 _LOG = logging.getLogger(__name__)
 
@@ -83,6 +82,7 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
     :param msg: the setup driver request object, either DriverSetupRequest or UserDataResponse
     :return: the setup action on how to continue
     """
+    # pylint: disable=R0911
     global _setup_step
     global _cfg_add_device
 
@@ -97,16 +97,14 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
                 _setup_step = SetupSteps.DEVICE_CONFIGURATION_MODE
                 _LOG.debug("Starting normal setup workflow")
                 return _user_input_discovery
-            else:
-                _LOG.debug("User requested backup/restore of configuration")
-                return await _handle_backup_restore_step()
+            _LOG.debug("User requested backup/restore of configuration")
+            return await _handle_backup_restore_step()
         if _setup_step == SetupSteps.DEVICE_CONFIGURATION_MODE:
             if "action" in msg.input_values:
                 _LOG.debug("Setup flow starts with existing configuration")
                 return await handle_configuration_mode(msg)
-            else:
-                _LOG.debug("Setup flow configuration mode")
-                return await _handle_discovery(msg)
+            _LOG.debug("Setup flow configuration mode")
+            return await _handle_discovery(msg)
         if _setup_step == SetupSteps.DISCOVER and "address" in msg.input_values:
             return await _handle_discovery(msg)
         if _setup_step == SetupSteps.DEVICE_CHOICE and "choice" in msg.input_values:
@@ -128,7 +126,7 @@ async def driver_setup_handler(msg: SetupDriver) -> SetupAction:
 
 
 async def handle_driver_setup(
-        _msg: DriverSetupRequest,
+    _msg: DriverSetupRequest,
 ) -> RequestUserInput | SetupError:
     """
     Start driver setup.
@@ -245,47 +243,47 @@ async def handle_driver_setup(
                 },
             ],
         )
-    else:
-        # Initial setup, make sure we have a clean configuration
-        config.devices.clear()  # triggers device instance removal
-        _setup_step = SetupSteps.WORKFLOW_MODE
-        return RequestUserInput(
-            {"en": "Configuration mode", "de": "Konfigurations-Modus"},
-            [
-                {
-                    "field": {
-                        "dropdown": {
-                            "value": "normal",
-                            "items": [
-                                {
-                                    "id": "normal",
-                                    "label": {
-                                        "en": "Start the configuration of the integration",
-                                        "fr": "Démarrer la configuration de l'intégration",
-                                    },
+
+    # Initial setup, make sure we have a clean configuration
+    config.devices.clear()  # triggers device instance removal
+    _setup_step = SetupSteps.WORKFLOW_MODE
+    return RequestUserInput(
+        {"en": "Configuration mode", "de": "Konfigurations-Modus"},
+        [
+            {
+                "field": {
+                    "dropdown": {
+                        "value": "normal",
+                        "items": [
+                            {
+                                "id": "normal",
+                                "label": {
+                                    "en": "Start the configuration of the integration",
+                                    "fr": "Démarrer la configuration de l'intégration",
                                 },
-                                {
-                                    "id": "backup_restore",
-                                    "label": {
-                                        "en": "Backup or restore devices configuration",
-                                        "fr": "Sauvegarder ou restaurer la configuration des appareils",
-                                    },
+                            },
+                            {
+                                "id": "backup_restore",
+                                "label": {
+                                    "en": "Backup or restore devices configuration",
+                                    "fr": "Sauvegarder ou restaurer la configuration des appareils",
                                 },
-                            ],
-                        }
-                    },
-                    "id": "configuration_mode",
-                    "label": {
-                        "en": "Configuration mode",
-                        "fr": "Mode de configuration",
-                    },
-                }
-            ],
-        )
+                            },
+                        ],
+                    }
+                },
+                "id": "configuration_mode",
+                "label": {
+                    "en": "Configuration mode",
+                    "fr": "Mode de configuration",
+                },
+            }
+        ],
+    )
 
 
 async def handle_configuration_mode(
-        msg: UserDataResponse,
+    msg: UserDataResponse,
 ) -> RequestUserInput | SetupComplete | SetupError:
     """
     Process user data response in a setup process.
@@ -296,6 +294,7 @@ async def handle_configuration_mode(
     :param msg: response data from the requested user data
     :return: the setup action on how to continue
     """
+    # pylint: disable=R0911
     global _setup_step
     global _cfg_add_device
     global _reconfigured_device
@@ -354,10 +353,16 @@ async def handle_configuration_mode(
                             "fr": "Pallier de volume",
                         },
                         "field": {
-                            "number": {"value": _reconfigured_device.volume_step, "min": 1.0, "max": 10, "steps": 1, "decimals": 1,
-                                       "unit": {"en": "dB"}}
+                            "number": {
+                                "value": _reconfigured_device.volume_step,
+                                "min": 1.0,
+                                "max": 10,
+                                "steps": 1,
+                                "decimals": 1,
+                                "unit": {"en": "dB"},
+                            }
                         },
-                    }
+                    },
                 ],
             )
         case "reset":
@@ -392,17 +397,7 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
     if address:
         _LOG.debug("Starting manual driver setup for %s", address)
         try:
-            if not address.startswith("http://"):
-                address = f"http://{address}"
-
-            result = urlparse(address)
-            path = result.path
-            port = result.port
-            if not path:
-                path = "/sony"
-            if not port:
-                port = DEFAULT_PORT
-            address = f"{result.scheme}://{result.hostname}:{port}{path}"
+            address = config.Devices.extract_url(address)
 
             _LOG.debug("Formatted address : %s", address)
             # simple connection check
@@ -469,7 +464,14 @@ async def _handle_discovery(msg: UserDataResponse) -> RequestUserInput | SetupEr
                     "fr": "Pallier de volume",
                 },
                 "field": {
-                    "number": {"value": 2.0, "min": 1.0, "max": 10, "steps": 1, "decimals": 1, "unit": {"en": "dB"}}
+                    "number": {
+                        "value": DEFAULT_VOLUME_STEP,
+                        "min": 1.0,
+                        "max": 10,
+                        "steps": 1,
+                        "decimals": 1,
+                        "unit": {"en": "dB"},
+                    }
                 },
             },
         ],
@@ -603,7 +605,7 @@ async def _handle_backup_restore(msg: UserDataResponse) -> SetupComplete | Setup
     updated_config = msg.input_values["config"]
     _LOG.info("Replacing configuration with : %s", updated_config)
     if not config.devices.import_config(updated_config):
-        _LOG.error("Setup error : unable to import updated configuration", updated_config)
+        _LOG.error("Setup error : unable to import updated configuration %s", updated_config)
         return SetupError(error_type=IntegrationSetupError.OTHER)
     _LOG.debug("Configuration imported successfully")
 

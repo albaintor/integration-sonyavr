@@ -2,7 +2,7 @@
 """
 This module implements a Remote Two integration driver for Sony AVR receivers.
 
-:copyright: (c) 2023 by Unfolded Circle ApS.
+:copyright: (c) 2023 by Albaintor
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
@@ -12,13 +12,14 @@ import os
 import sys
 from typing import Any
 
+import ucapi
+from ucapi.media_player import Attributes as MediaAttr
+
 import avr
 import config
 import media_player
 import setup_flow
-import ucapi
 from config import device_from_entity_id
-from ucapi.media_player import Attributes as MediaAttr
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
 if sys.platform == "win32":
@@ -164,8 +165,8 @@ async def on_device_connected(device_id: str):
 
         if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
             if (
-                    configured_entity.attributes[ucapi.media_player.Attributes.STATE]
-                    == ucapi.media_player.States.UNAVAILABLE
+                configured_entity.attributes[ucapi.media_player.Attributes.STATE]
+                == ucapi.media_player.States.UNAVAILABLE
             ):
                 # TODO why STANDBY?
                 api.configured_entities.update_attributes(

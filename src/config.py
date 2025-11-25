@@ -1,26 +1,24 @@
 """
 Configuration handling of the integration driver.
 
-:copyright: (c) 2023 by Unfolded Circle ApS.
+:copyright: (c) 2023 by Albaintor
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
 import dataclasses
-from urllib.parse import urlparse
-
-from songpal import Device
-
-import discover
 import json
 import logging
 import os
 from asyncio import Lock
-from dataclasses import dataclass
-from typing import Iterator, Callable
+from dataclasses import dataclass, field, fields
+from typing import Callable, Iterator
+from urllib.parse import urlparse
 
+from songpal import Device
 from ucapi import EntityTypes
 
-from const import DEFAULT_PORT
+import discover
+from const import DEFAULT_PORT, DEFAULT_VOLUME_STEP
 
 _LOG = logging.getLogger(__name__)
 
@@ -52,21 +50,20 @@ class DeviceInstance:
     id: str
     name: str
     address: str
-    always_on: bool
-    volume_step: float
-    mac_address_wired: str | None
-    mac_address_wifi: str | None
+    always_on: bool = field(default=False)
+    volume_step: float = field(default=DEFAULT_VOLUME_STEP)
+    mac_address_wired: str | None = field(default=None)
+    mac_address_wifi: str | None = field(default=None)
 
-    def __init__(self, id, name, address, always_on, volume_step, mac_address_wired, mac_address_wifi):
-        """Device instance registry."""
-        # pylint: disable = W0622,R0917
-        self.id = id
-        self.name = name
-        self.address = address
-        self.always_on = always_on
-        self.volume_step = volume_step
-        self.mac_address_wired = mac_address_wired
-        self.mac_address_wifi = mac_address_wifi
+    def __post_init__(self):
+        """Apply default values on missing fields."""
+        for attribute in fields(self):
+            # If there is a default and the value of the field is none we can assign a value
+            if (
+                not isinstance(attribute.default, dataclasses.MISSING.__class__)
+                and getattr(self, attribute.name) is None
+            ):
+                setattr(self, attribute.name, attribute.default)
 
 
 class _EnhancedJSONEncoder(json.JSONEncoder):
@@ -81,10 +78,13 @@ class _EnhancedJSONEncoder(json.JSONEncoder):
 class Devices:
     """Integration driver configuration class. Manages all configured Sony devices."""
 
-    def __init__(self, data_path: str,
-                 add_handler: Callable[[DeviceInstance], None],
-                 remove_handler: Callable[[DeviceInstance | None], None],
-                 update_handler: Callable[[DeviceInstance], None]):
+    def __init__(
+        self,
+        data_path: str,
+        add_handler: Callable[[DeviceInstance], None],
+        remove_handler: Callable[[DeviceInstance | None], None],
+        update_handler: Callable[[DeviceInstance], None],
+    ):
         """
         Create a configuration instance for the given configuration path.
 
@@ -240,6 +240,7 @@ class Devices:
             with open(self._cfg_file_path, "w+", encoding="utf-8") as f:
                 json.dump(self._config, f, ensure_ascii=False, cls=_EnhancedJSONEncoder)
             return True
+        # pylint: disable = W0718
         except Exception as ex:
             _LOG.error(
                 "Cannot import the updated configuration %s, keeping existing configuration : %s", updated_config, ex
@@ -248,6 +249,7 @@ class Devices:
                 # Restore current configuration
                 self._config = config_backup
                 self.store()
+            # pylint: disable = W0718
             except Exception:
                 pass
         return False
@@ -270,7 +272,7 @@ class Devices:
                     item.get("always_on", False),
                     item.get("volume_step", 2.0),
                     item.get("mac_address_wired", None),
-                    item.get("mac_address_wifi", None)
+                    item.get("mac_address_wifi", None),
                 )
                 self._config.append(device_instance)
             return True
@@ -282,8 +284,8 @@ class Devices:
         return False
 
     @staticmethod
-    async def extract_device_info(host: str) -> DeviceInstance:
-        """Extract device information from host."""
+    async def extract_url(host: str) -> str:
+        """Build URL."""
         if not host.startswith("http://"):
             host = f"http://{host}"
 
@@ -294,7 +296,12 @@ class Devices:
             path = "/sony"
         if not port:
             port = DEFAULT_PORT
-        host = f"{result.scheme}://{result.hostname}:{port}{path}"
+        return f"{result.scheme}://{result.hostname}:{port}{path}"
+
+    @staticmethod
+    async def extract_device_info(host: str) -> DeviceInstance:
+        """Extract device information from host."""
+        host = Devices.extract_url(host)
 
         # simple connection check
         device = Device(host)
@@ -318,7 +325,7 @@ class Devices:
             always_on=False,
             volume_step=2,
             mac_address_wired=system_info.macAddr,
-            mac_address_wifi=system_info.wirelessMacAddr
+            mac_address_wifi=system_info.wirelessMacAddr,
         )
 
     async def handle_address_change(self):
@@ -332,34 +339,43 @@ class Devices:
         # Only one instance of devices change
         await self._config_lock.acquire()
         _discovered_devices = await discover.sony_avrs()
-        _discovered_configs: [DeviceInstance] = []
-        _devices_changed: [DeviceInstance] = []
+        _discovered_configs: list[DeviceInstance] = []
+        _devices_changed: list[DeviceInstance] = []
 
         for _discovered_device in _discovered_devices:
             try:
                 _discovered_configs.append(await Devices.extract_device_info(_discovered_device.endpoint))
+            # pylint: disable = W0718
             except Exception:
                 pass
 
         for device_config in devices.all():
             found = False
             for device in _discovered_configs:
-                if device_config.mac_address_wifi and (device_config.mac_address_wifi == device.mac_address_wired
-                                                       or device_config.mac_address_wifi == device.mac_address_wifi):
+                if device_config.mac_address_wifi and device_config.mac_address_wifi in [
+                    device.mac_address_wired,
+                    device.mac_address_wifi,
+                ]:
                     found = True
-                elif device_config.mac_address_wired and (device_config.mac_address_wired == device.mac_address_wired
-                                                          or device_config.mac_address_wired == device.mac_address_wifi):
+                elif device_config.mac_address_wired and device_config.mac_address_wired in [
+                    device.mac_address_wired,
+                    device.mac_address_wifi,
+                ]:
                     found = True
 
                 if found:
                     if device_config.address == device.address:
-                        _LOG.debug("Found device %s with unchanged address %s", device_config.name,
-                                   device_config.address)
+                        _LOG.debug(
+                            "Found device %s with unchanged address %s", device_config.name, device_config.address
+                        )
                     elif device.address:
-                        _LOG.debug("Found device %s with new address %s -> %s", device_config.name,
-                                   device_config.address, device.address)
+                        _LOG.debug(
+                            "Found device %s with new address %s -> %s",
+                            device_config.name,
+                            device_config.address,
+                            device.address,
+                        )
                         device_config.address = device.address
-                        _configuration_changed = True
                     break
             if not found:
                 _LOG.debug("Device %s (%s) not found, probably off", device_config.name, device_config.address)

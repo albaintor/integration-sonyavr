@@ -1,7 +1,7 @@
 """
 This module implements the AVR AVR receiver communication of the Remote Two integration driver.
 
-:copyright: (c) 2023 by Unfolded Circle ApS.
+:copyright: (c) 2023 by Albaintor
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
@@ -15,7 +15,7 @@ from functools import wraps
 from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, TypeVar
 
 import ucapi
-from config import DeviceInstance
+from aiohttp import ClientOSError
 from pyee.asyncio import AsyncIOEventEmitter
 from songpal import (
     ConnectChange,
@@ -26,13 +26,19 @@ from songpal import (
     VolumeChange,
 )
 from songpal.containers import InterfaceInfo, PlayInfo, Setting, Sysinfo
-from ucapi.media_player import Attributes as MediaAttr, States
+from ucapi.media_player import Attributes as MediaAttr
+from ucapi.media_player import States
+
+from config import DeviceInstance
 
 _LOG = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 5
 CONNECTION_RETRIES = 10
 BUFFER_LIFETIME = 30
+POWER_TIMEOUT = 10
+POWER_CHECKS = 10
+ERROR_OS_WAIT = 0.5
 
 _SonyDeviceT = TypeVar("_SonyDeviceT", bound="SonyDevice")
 _P = ParamSpec("_P")
@@ -56,10 +62,16 @@ SONY_PLAYBACK_STATE_MAPPING = {
 }
 
 
-async def retry_call_command(timeout: float, bufferize: bool,
-                             func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
-                             obj: _SonyDeviceT, *args: _P.args, **kwargs: _P.kwargs) -> ucapi.StatusCodes:
+async def retry_call_command(
+    timeout: float,
+    bufferize: bool,
+    func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
+    obj: _SonyDeviceT,
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> ucapi.StatusCodes:
     """Retry call command when failed"""
+    # pylint: disable=W0212
     # Launch reconnection task if not active
     if not obj._connect_task:
         obj._connect_task = asyncio.create_task(obj._connect_loop())
@@ -67,12 +79,7 @@ async def retry_call_command(timeout: float, bufferize: bool,
     # If the command should be bufferized (and retried later) add it to the list and returns OK
     if bufferize:
         _LOG.debug("Bufferize command %s %s", func, args)
-        obj._buffered_callbacks[time.time()] = {
-            "object": obj,
-            "function": func,
-            "args": args,
-            "kwargs": kwargs
-        }
+        obj._buffered_callbacks[time.time()] = {"object": obj, "function": func, "args": args, "kwargs": kwargs}
         return ucapi.StatusCodes.OK
     try:
         # Else (no bufferize) wait (not more than "timeout" seconds) for the connection to complete
@@ -90,11 +97,15 @@ async def retry_call_command(timeout: float, bufferize: bool,
     return ucapi.StatusCodes.OK
 
 
-def retry(*, timeout: float = 5, bufferize=False
-          ) -> Callable[[Callable[_P, Awaitable[ucapi.StatusCodes]]],
-Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]]:
-    def decorator(func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]]
-                  ) -> Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]:
+def retry(*, timeout: float = 5, bufferize=False) -> Callable[
+    [Callable[_P, Awaitable[ucapi.StatusCodes]]],
+    Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]],
+]:
+    """Retry command."""
+
+    def decorator(
+        func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
+    ) -> Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]:
         @wraps(func)
         async def wrapper(obj: _SonyDeviceT, *args: _P.args, **kwargs: _P.kwargs) -> ucapi.StatusCodes:
             """Wrap all command methods."""
@@ -118,13 +129,13 @@ Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | 
                 )
                 try:
                     return await retry_call_command(timeout, bufferize, func, obj, *args, **kwargs)
-                except SongpalException as ex:
+                except SongpalException as ex2:
                     log_function(
                         "Error calling %s on [%s(%s)]: %r",
                         func.__name__,
                         obj._name,
                         obj._receiver.endpoint,
-                        ex,
+                        ex2,
                     )
                     return ucapi.StatusCodes.BAD_REQUEST
             # pylint: disable = W0718
@@ -141,9 +152,9 @@ class SonyDevice:
     """Representing a Sony AVR Device."""
 
     def __init__(
-            self,
-            device: DeviceInstance,
-            loop: AbstractEventLoop | None = None,
+        self,
+        device: DeviceInstance,
+        loop: AbstractEventLoop | None = None,
     ):
         """Create instance with given IP or hostname of AVR."""
         # identifier from configuration
@@ -216,6 +227,7 @@ class SonyDevice:
         _LOG.debug("", exc_info=True)
 
     async def _run_buffered_commands(self):
+        # pylint: disable=R1702
         if self._buffered_callbacks:
             _LOG.debug("Connected, executing buffered commands")
             while self._buffered_callbacks:
@@ -252,7 +264,7 @@ class SonyDevice:
         while True:
             try:
                 try:
-                    async with asyncio.timeout(5):
+                    async with asyncio.timeout(DEFAULT_TIMEOUT):
                         task = asyncio.create_task(self._receiver.get_supported_methods())
                         await task
                 except (asyncio.TimeoutError, SongpalException) as ex:
@@ -270,6 +282,7 @@ class SonyDevice:
                     self._connect_task = None
                     self._reconnect_retry = 0
                     break
+            # pylint: disable = W0718
             except Exception as ex:
                 _LOG.error("Error during reconnection %s", ex)
 
@@ -324,11 +337,11 @@ class SonyDevice:
                 self.events.emit(Events.UPDATE, self.id, updated_data)
 
         async def _wait_power_on():
-            """Wait for the device to remain off during 100 seconds after power off and then close the connections """
-            max_checks = 10
+            """Wait for the device to remain off during 100 seconds after power off and then close the connections"""
+            max_checks = POWER_CHECKS
             check_number = 0
             while True:
-                await asyncio.sleep(10)
+                await asyncio.sleep(POWER_TIMEOUT)
                 if self.state == States.ON:
                     _LOG.debug("Device %s is on again", self.id)
                     break
@@ -358,7 +371,7 @@ class SonyDevice:
         async def _try_reconnect(connect: ConnectChange):
             _LOG.debug("Disconnected: %s", connect.exception)
             if not self._connect_task:
-                _LOG.warning("Running connect task", ex)
+                _LOG.warning("Running connect task")
                 self._connect_task = asyncio.create_task(self._connect_loop())
 
         _LOG.info("Sony AVR Activating websocket connection")
@@ -399,7 +412,18 @@ class SonyDevice:
             _LOG.info("Sony AVR connect...")
             await self._connect_lock.acquire()
             self._connecting = True
-            await self._receiver.get_supported_methods()
+            try:
+                await self._receiver.get_supported_methods()
+            except SongpalException as ex:
+                if ex.__cause__ and isinstance(ex.__cause__, ClientOSError):
+                    _LOG.warning(
+                        "[%s] OS error, waiting %ss and retry connection", self._device_config.address, ERROR_OS_WAIT
+                    )
+                    await asyncio.sleep(ERROR_OS_WAIT)
+                    await self._receiver.get_supported_methods()
+                else:
+                    raise ex
+
             if self._interface_info is None:
                 self._interface_info = await self._receiver.get_interface_information()
             if self._sysinfo is None:
@@ -501,7 +525,7 @@ class SonyDevice:
         # self._expected_volume = self.volume_level
 
         # None update object means data are up to date & client can fetch required data.
-        #TODO : improve send only modified data
+        # TODO : improve send only modified data
         self.events.emit(Events.UPDATE, self.id, None)
 
     @property
@@ -510,20 +534,20 @@ class SonyDevice:
         return self._unique_id
 
     @property
-    def attributes(self) -> dict[str, any]:
+    def attributes(self) -> dict[str, Any]:
         """Return the device attributes."""
         updated_data = {
             MediaAttr.STATE: self.state,
             MediaAttr.MUTED: self.is_volume_muted,
             MediaAttr.VOLUME: self.volume_level,
             MediaAttr.SOURCE_LIST: self.source_list,
-            MediaAttr.SOURCE: self.source,
+            MediaAttr.SOURCE: self.source if self.source else "",
             MediaAttr.SOUND_MODE_LIST: self.sound_mode_list,
             MediaAttr.SOUND_MODE: self.sound_mode,
             MediaAttr.MEDIA_IMAGE_URL: self.media_image_url,
             MediaAttr.MEDIA_TITLE: self.media_title,
             MediaAttr.MEDIA_ARTIST: self.media_artist,
-            MediaAttr.MEDIA_ALBUM: self.media_album_name
+            MediaAttr.MEDIA_ALBUM: self.media_album_name,
         }
         return updated_data
 
@@ -798,7 +822,7 @@ class SonyDevice:
         return ucapi.StatusCodes.OK
 
     @retry()
-    async def set_sound_settings(self, setting: str, value: any) -> ucapi.StatusCodes:
+    async def set_sound_settings(self, setting: str, value: Any) -> ucapi.StatusCodes:
         """Select sound mode."""
         if setting is None or value is None:
             return ucapi.StatusCodes.BAD_REQUEST
