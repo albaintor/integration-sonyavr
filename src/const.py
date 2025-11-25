@@ -1,5 +1,4 @@
-"""
-Constants file
+"""Constants file.
 
 :copyright: (c) 2023 by Albaintor
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.

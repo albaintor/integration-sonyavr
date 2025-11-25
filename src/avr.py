@@ -70,7 +70,7 @@ async def retry_call_command(
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> ucapi.StatusCodes:
-    """Retry call command when failed"""
+    """Retry call command when failed."""
     # pylint: disable=W0212
     # Launch reconnection task if not active
     if not obj._connect_task:
@@ -337,7 +337,7 @@ class SonyDevice:
                 self.events.emit(Events.UPDATE, self.id, updated_data)
 
         async def _wait_power_on():
-            """Wait for the device to remain off during 100 seconds after power off and then close the connections"""
+            """Wait for the device to remain off during 100 seconds after power off and then close the connections."""
             max_checks = POWER_CHECKS
             check_number = 0
             while True:
