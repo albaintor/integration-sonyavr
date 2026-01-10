@@ -42,11 +42,12 @@ class SetupSteps(IntEnum):
     BACKUP_RESTORE = 6
 
 
+# pylint: disable = C0301,C0103
+# flake8: noqa
+
 _setup_step = SetupSteps.INIT
 _cfg_add_device: bool = False
 _reconfigured_device: DeviceInstance | None = None
-# pylint: disable = C0301,C0103
-# flake8: noqa
 
 _user_input_discovery = RequestUserInput(
     {"en": "Setup mode", "de": "Setup Modus"},
