@@ -378,10 +378,13 @@ class SonyDevice:
             updated_data = {}
             if setting.target == "soundField":
                 if self._sound_fields is None or setting.currentValue != self._sound_fields.currentValue:
-                    updated_data[SonySensors.SENSOR_SOUND_MODE] = setting.currentValue
-                    updated_data[MediaAttr.SOUND_MODE] = setting.currentValue
                     if self._sound_fields is not None:
                         self._sound_fields.currentValue = setting.currentValue
+                        updated_data[SonySensors.SENSOR_SOUND_MODE] = self.sound_mode
+                        updated_data[MediaAttr.SOUND_MODE] = self.sound_mode
+                    else:
+                        updated_data[SonySensors.SENSOR_SOUND_MODE] = setting.currentValue
+                        updated_data[MediaAttr.SOUND_MODE] = setting.currentValue
             if updated_data:
                 self.events.emit(Events.UPDATE, self.id, updated_data)
 
@@ -675,6 +678,9 @@ class SonyDevice:
         """Return the current matched sound mode."""
         if self._sound_fields is None:
             return ""
+        for opt in self._sound_fields.candidate:
+            if opt.value == self._sound_fields.currentValue:
+                return opt.title
         return self._sound_fields.currentValue
 
     @property
