@@ -1,3 +1,3 @@
 pyee~=13.0.0
 python-songpal~=0.16.2
-ucapi~=0.4.0
+ucapi~=0.5.1

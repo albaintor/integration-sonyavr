@@ -30,6 +30,7 @@ from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import States
 
 from config import DeviceInstance
+from const import SonySensors
 
 _LOG = logging.getLogger(__name__)
 
@@ -308,16 +309,18 @@ class SonyDevice:
 
         async def _volume_changed(volume: VolumeChange):
             _LOG.debug("Sony AVR volume changed: %s", volume)
-            attr_changed = {}
+            updated_data = {}
             new_volume = float(volume.volume - self._volume_min) * 100 / float(self._volume_max - self._volume_min)
             if self._volume != new_volume:
                 self._volume = new_volume
-                attr_changed[MediaAttr.VOLUME] = self.volume_level
+                updated_data[MediaAttr.VOLUME] = self.volume_level
+                updated_data[SonySensors.SENSOR_VOLUME] = self.volume_level
             if self._attr_is_volume_muted != volume.mute:
                 self._attr_is_volume_muted = volume.mute
-                attr_changed[MediaAttr.MUTED] = self._attr_is_volume_muted
-            if attr_changed:
-                self.events.emit(Events.UPDATE, self.id, attr_changed)
+                updated_data[MediaAttr.MUTED] = self._attr_is_volume_muted
+                updated_data[SonySensors.SENSOR_MUTED] = self._attr_is_volume_muted
+            if updated_data:
+                self.events.emit(Events.UPDATE, self.id, updated_data)
 
         async def _source_changed(content: ContentChange):
             _LOG.debug("Sony AVR Source changed: %s", content)
@@ -332,6 +335,7 @@ class SonyDevice:
                 self._active_source = self._sources[content.uri]
                 _LOG.debug("Sony AVR New active source: %s", self._active_source)
                 updated_data[MediaAttr.SOURCE] = self.source
+                updated_data[SonySensors.SENSOR_INPUT] = self.source
                 self.events.emit(Events.UPDATE, self.id, updated_data)
             elif bool(updated_data):
                 self.events.emit(Events.UPDATE, self.id, updated_data)
@@ -526,7 +530,7 @@ class SonyDevice:
 
         # None update object means data are up to date & client can fetch required data.
         # TODO : improve send only modified data
-        self.events.emit(Events.UPDATE, self.id, None)
+        self.events.emit(Events.UPDATE, self.id, self.attributes)
 
     @property
     def unique_id(self) -> str:
@@ -548,6 +552,10 @@ class SonyDevice:
             MediaAttr.MEDIA_TITLE: self.media_title,
             MediaAttr.MEDIA_ARTIST: self.media_artist,
             MediaAttr.MEDIA_ALBUM: self.media_album_name,
+            SonySensors.SENSOR_VOLUME: self.volume_level,
+            SonySensors.SENSOR_INPUT: self.source,
+            SonySensors.SENSOR_MUTED: self.is_volume_muted,
+            SonySensors.SENSOR_SOUND_MODE: self.sound_mode,
         }
         return updated_data
 

@@ -19,13 +19,13 @@ from ucapi.media_player import (
 )
 
 import avr
-from config import DeviceInstance, create_entity_id
+from config import DeviceInstance, SonyEntity, create_entity_id
 from const import SIMPLE_COMMANDS
 
 _LOG = logging.getLogger(__name__)
 
 
-class SonyMediaPlayer(MediaPlayer):
+class SonyMediaPlayer(MediaPlayer, SonyEntity):
     """Representation of a Sony Media Player entity."""
 
     def __init__(self, device: DeviceInstance, receiver: avr.SonyDevice):
@@ -60,7 +60,12 @@ class SonyMediaPlayer(MediaPlayer):
             options={Options.SIMPLE_COMMANDS: SIMPLE_COMMANDS},
         )
 
-    async def command(self, cmd_id: str, params: dict[str, Any] | None = None) -> StatusCodes:
+    @property
+    def deviceid(self) -> str:
+        """Return the device identifier."""
+        return self._receiver.id
+
+    async def command(self, cmd_id: str, params: dict[str, Any] | None = None, *, websocket: Any) -> StatusCodes:
         """
         Media-player entity command handler.
 
@@ -68,6 +73,8 @@ class SonyMediaPlayer(MediaPlayer):
 
         :param cmd_id: command
         :param params: optional command parameters
+        :param websocket: optional websocket connection. Allows for directed event
+                          callbacks instead of broadcasts.
         :return: status code of the command request
         """
         _LOG.info("Got %s command request: %s %s", self.id, cmd_id, params)
