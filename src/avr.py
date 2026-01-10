@@ -22,6 +22,7 @@ from songpal import (
     ContentChange,
     Device,
     PowerChange,
+    SettingChange,
     SongpalException,
     VolumeChange,
 )
@@ -305,7 +306,7 @@ class SonyDevice:
     async def async_activate_websocket(self):
         """Activate websocket for listening if wanted."""
         # pylint: disable = R0915
-        _LOG.debug("async_activate_websocket", exc_info=True)
+        _LOG.debug("Sony AVR activate websocket")
 
         async def _volume_changed(volume: VolumeChange):
             _LOG.debug("Sony AVR volume changed: %s", volume)
@@ -372,6 +373,18 @@ class SonyDevice:
                     pass
                 self._check_device_task = None
 
+        async def _setting_changed(setting: SettingChange):
+            _LOG.debug("Sony AVR setting changed: %s", setting)
+            updated_data = {}
+            if setting.target == "soundField":
+                if self._sound_fields is None or setting.currentValue != self._sound_fields.currentValue:
+                    updated_data[SonySensors.SENSOR_SOUND_MODE] = setting.currentValue
+                    updated_data[MediaAttr.SOUND_MODE] = setting.currentValue
+                    if self._sound_fields is not None:
+                        self._sound_fields.currentValue = setting.currentValue
+            if updated_data:
+                self.events.emit(Events.UPDATE, self.id, updated_data)
+
         async def _try_reconnect(connect: ConnectChange):
             _LOG.debug("Disconnected: %s", connect.exception)
             if not self._connect_task:
@@ -390,6 +403,7 @@ class SonyDevice:
                 self._receiver.on_notification(ContentChange, _source_changed)
                 self._receiver.on_notification(PowerChange, _power_changed)
                 self._receiver.on_notification(ConnectChange, _try_reconnect)
+                self._receiver.on_notification(SettingChange, _setting_changed)
             await self._init_websocket()
         # pylint: disable = W0718
         except Exception as ex:
