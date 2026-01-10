@@ -319,7 +319,7 @@ class SonyDevice:
             if self._attr_is_volume_muted != volume.mute:
                 self._attr_is_volume_muted = volume.mute
                 updated_data[MediaAttr.MUTED] = self._attr_is_volume_muted
-                updated_data[SonySensors.SENSOR_MUTED] = self._attr_is_volume_muted
+                updated_data[SonySensors.SENSOR_MUTED] = ("on" if self._attr_is_volume_muted else "off",)
             if updated_data:
                 self.events.emit(Events.UPDATE, self.id, updated_data)
 
@@ -571,7 +571,7 @@ class SonyDevice:
             MediaAttr.MEDIA_ALBUM: self.media_album_name,
             SonySensors.SENSOR_VOLUME: self.volume_level,
             SonySensors.SENSOR_INPUT: self.source,
-            SonySensors.SENSOR_MUTED: self.is_volume_muted,
+            SonySensors.SENSOR_MUTED: "on" if self.is_volume_muted else "off",
             SonySensors.SENSOR_SOUND_MODE: self.sound_mode,
         }
         return updated_data
