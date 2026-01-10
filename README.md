@@ -3,7 +3,9 @@
 Using [python-songpal](https://github.com/rytilahti/python-songpal)
 and [uc-integration-api](https://github.com/aitatoi/integration-python-library)
 
-The driver discovers Sony AVRs on the network. A media player entity is exposed to the core.
+The driver discovers Sony AVRs on the network. A media player entity and sensors are exposed to the remote.
+
+**Media Player entity**
 
 Supported attributes:
 
@@ -13,6 +15,7 @@ Supported attributes:
 - Artist
 - Artwork
 - Source
+- Sound mode
 
 Supported commands:
 
@@ -24,6 +27,15 @@ Supported commands:
 - Volume down
 - Pause (unfortunately resume to play is not supported by the library...)
 - Source select
+- Sound mode selection
+
+**Sensor entities**
+
+- Current volume level
+- Muted state (binary sensor)
+- Current input source
+- Current output sound mode
+
 
 ## Usage
 
