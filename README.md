@@ -29,6 +29,10 @@ Supported commands:
 - Source select
 - Sound mode selection
 
+**Select entities**
+
+- Current input source
+
 **Sensor entities**
 
 - Current volume level
