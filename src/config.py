@@ -68,6 +68,7 @@ class DeviceInstance:
     volume_step: float = field(default=DEFAULT_VOLUME_STEP)
     mac_address_wired: str | None = field(default=None)
     mac_address_wifi: str | None = field(default=None)
+    sensor_include_device_name: bool = field(default=True)
 
     def __post_init__(self):
         """Apply default values on missing fields."""
@@ -78,6 +79,12 @@ class DeviceInstance:
                 and getattr(self, attribute.name) is None
             ):
                 setattr(self, attribute.name, attribute.default)
+
+    def get_device_part(self) -> str:
+        """Return the device name part to build entity names."""
+        if self.sensor_include_device_name:
+            return self.name + " "
+        return ""
 
 
 class _EnhancedJSONEncoder(json.JSONEncoder):
