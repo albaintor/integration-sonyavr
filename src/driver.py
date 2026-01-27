@@ -291,7 +291,7 @@ async def on_device_update(avr_id: str, update: dict[str, Any] | None) -> None:
     for entity_id in _entities_from_device(avr_id):
         configured_entity = api.configured_entities.get(entity_id)
         if configured_entity is None:
-            return
+            continue
 
         if isinstance(configured_entity, media_player.SonyMediaPlayer):
             attributes = configured_entity.filter_changed_attributes(update)
