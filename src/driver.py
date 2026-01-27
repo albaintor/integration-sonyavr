@@ -18,6 +18,7 @@ import ucapi
 import avr
 import config
 import media_player
+import selector
 import sensor
 import setup_flow
 from config import SonyEntity
@@ -137,6 +138,8 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
                 )
             elif isinstance(entity, sensor.SonySensor):
                 api.configured_entities.update_attributes(entity_id, entity.update_attributes())
+            elif isinstance(entity, selector.SonySelect):
+                api.configured_entities.update_attributes(entity_id, entity.update_attributes())
             continue
 
         device = config.devices.get(device_id)
@@ -184,7 +187,6 @@ async def on_device_connected(device_id: str):
         _LOG.warning("Device %s is not configured", device_id)
         return
 
-    # TODO #20 when multiple devices are supported, the device state logic isn't that simple anymore!
     await api.set_device_state(ucapi.DeviceStates.CONNECTED)
 
     for entity_id in _entities_from_device(device_id):
@@ -295,6 +297,8 @@ async def on_device_update(avr_id: str, update: dict[str, Any] | None) -> None:
             attributes = configured_entity.filter_changed_attributes(update)
         elif isinstance(configured_entity, sensor.SonySensor):
             attributes = configured_entity.update_attributes(update)
+        elif isinstance(configured_entity, selector.SonySelect):
+            attributes = configured_entity.update_attributes(update)
 
         if attributes:
             # _LOG.debug("Sony AVR send updated attributes %s %s", entity_id, attributes)
@@ -312,6 +316,7 @@ def _entities_from_device(device_id: str) -> list[str]:
     # TODO #21 support multiple zones: one media-player per zone
     return [
         f"media_player.{device_id}",
+        f"select.{device_id}.{SonySensorInputSource.ENTITY_NAME}",
         f"sensor.{device_id}.{SonySensorVolume.ENTITY_NAME}",
         f"sensor.{device_id}.{SonySensorMuted.ENTITY_NAME}",
         f"sensor.{device_id}.{SonySensorInputSource.ENTITY_NAME}",
@@ -358,6 +363,7 @@ def _register_available_entities(device_config: config.DeviceInstance, device: a
     """
     entities = [
         media_player.SonyMediaPlayer(device_config, device),
+        selector.SonyInputSourceSelect(device_config, device),
         sensor.SonySensorVolume(device_config, device),
         sensor.SonySensorInputSource(device_config, device),
         sensor.SonySensorMuted(device_config, device),
@@ -421,6 +427,7 @@ async def main():
     logging.getLogger("discover").setLevel(level)
     logging.getLogger("driver").setLevel(level)
     logging.getLogger("media_player").setLevel(level)
+    logging.getLogger("select").setLevel(level)
     logging.getLogger("sensor").setLevel(level)
     logging.getLogger("config").setLevel(level)
     logging.getLogger("setup_flow").setLevel(level)

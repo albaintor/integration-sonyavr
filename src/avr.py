@@ -31,7 +31,7 @@ from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import States
 
 from config import DeviceInstance
-from const import SonySensors
+from const import SonySelects, SonySensors
 
 _LOG = logging.getLogger(__name__)
 
@@ -337,6 +337,7 @@ class SonyDevice:
                 _LOG.debug("Sony AVR New active source: %s", self._active_source)
                 updated_data[MediaAttr.SOURCE] = self.source
                 updated_data[SonySensors.SENSOR_INPUT] = self.source
+                updated_data[SonySelects.SELECT_INPUT_SOURCE] = {"current_option": self.source if self.source else ""}
                 self.events.emit(Events.UPDATE, self.id, updated_data)
             elif bool(updated_data):
                 self.events.emit(Events.UPDATE, self.id, updated_data)
@@ -486,10 +487,10 @@ class SonyDevice:
             _LOG.debug("Got ins: %s", inputs)
 
             self._sources = OrderedDict()
-            for input_ in inputs:
-                self._sources[input_.uri] = input_
-                if input_.active:
-                    self._active_source = input_
+            for _input in inputs:
+                self._sources[_input.uri] = _input
+                if _input.active:
+                    self._active_source = _input
 
             _LOG.debug("Active source: %s", self._active_source)
             self._play_info = await self._receiver.get_play_info()
@@ -573,6 +574,10 @@ class SonyDevice:
             SonySensors.SENSOR_INPUT: self.source,
             SonySensors.SENSOR_MUTED: "on" if self.is_volume_muted else "off",
             SonySensors.SENSOR_SOUND_MODE: self.sound_mode,
+            SonySelects.SELECT_INPUT_SOURCE: {
+                "current_option": self.source if self.source else "",
+                "options": self.source_list,
+            },
         }
         return updated_data
 

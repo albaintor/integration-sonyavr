@@ -19,3 +19,9 @@ class SonySensors(str, Enum):
     SENSOR_MUTED = "sensor_muted"
     SENSOR_INPUT = "sensor_input"
     SENSOR_SOUND_MODE = "sensor_sound_mode"
+
+
+class SonySelects(str, Enum):
+    """Sony select values."""
+
+    SELECT_INPUT_SOURCE = "select_input_source"
