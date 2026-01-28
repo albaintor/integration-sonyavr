@@ -24,6 +24,7 @@ from enum import StrEnum
 from tkinter import ttk
 from typing import Any, Callable
 
+sys.path.insert(1, "src")
 import requests
 from aiohttp import ClientSession, ClientWebSocketResponse, WSMsgType
 from PIL import Image, ImageTk
@@ -71,7 +72,7 @@ if sys.platform == "win32":
 _LOOP = asyncio.new_event_loop()
 asyncio.set_event_loop(_LOOP)
 
-DRIVER_PORT = 9091
+DRIVER_PORT = 9090
 DRIVER_URL = f"ws://{get_local_ip()}:{DRIVER_PORT}/ws"
 MAIN_WS_MAX_MSG_SIZE = 8 * 1024 * 1024  # 8Mb
 WS_TIMEOUT = 5

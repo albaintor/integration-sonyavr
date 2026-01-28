@@ -368,6 +368,7 @@ def _register_available_entities(device_config: config.DeviceInstance, device: a
     entities = [
         media_player.SonyMediaPlayer(device_config, device),
         selector.SonyInputSourceSelect(device_config, device),
+        selector.SonySoundModeSelect(device_config, device),
         sensor.SonySensorVolume(device_config, device),
         sensor.SonySensorInputSource(device_config, device),
         sensor.SonySensorMuted(device_config, device),

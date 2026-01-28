@@ -383,9 +383,11 @@ class SonyDevice:
                         self._sound_fields.currentValue = setting.currentValue
                         updated_data[SonySensors.SENSOR_SOUND_MODE] = self.sound_mode
                         updated_data[MediaAttr.SOUND_MODE] = self.sound_mode
+                        updated_data[SonySelects.SELECT_SOUND_MODE] = {"current_option": self.sound_mode}
                     else:
                         updated_data[SonySensors.SENSOR_SOUND_MODE] = setting.currentValue
                         updated_data[MediaAttr.SOUND_MODE] = setting.currentValue
+                        updated_data[SonySelects.SELECT_SOUND_MODE] = {"current_option": self.sound_mode}
             if updated_data:
                 self.events.emit(Events.UPDATE, self.id, updated_data)
 
@@ -577,6 +579,10 @@ class SonyDevice:
             SonySelects.SELECT_INPUT_SOURCE: {
                 "current_option": self.source if self.source else "",
                 "options": self.source_list,
+            },
+            SonySelects.SELECT_SOUND_MODE: {
+                "current_option": self.sound_mode,
+                "options": self.sound_mode_list,
             },
         }
         return updated_data

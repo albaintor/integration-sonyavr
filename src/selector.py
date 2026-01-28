@@ -169,3 +169,35 @@ class SonyInputSourceSelect(SonySelect):
     def select_options(self) -> list[str]:
         """Return selection list."""
         return self._device.source_list
+
+
+class SonySoundModeSelect(SonySelect):
+    """Sound mode selector entity."""
+
+    ENTITY_NAME = "sound_mode"
+    SELECT_NAME = SonySelects.SELECT_INPUT_SOURCE
+
+    def __init__(self, device_config: DeviceInstance, device: avr.SonyDevice):
+        """Initialize the class."""
+        # pylint: disable=W1405,R0801
+        entity_id = f"{create_entity_id(device_config.id, PatchedEntityTypes.SELECT)}.{self.ENTITY_NAME}"
+        super().__init__(
+            entity_id,
+            {
+                "en": f"{device_config.get_device_part()}Sound mode",
+                "fr": f"{device_config.get_device_part()}Mode sonore",
+            },
+            device_config,
+            device,
+            device.select_sound_mode,
+        )
+
+    @property
+    def current_option(self) -> str:
+        """Return selector value."""
+        return self._device.sound_mode
+
+    @property
+    def select_options(self) -> list[str]:
+        """Return selection list."""
+        return self._device.sound_mode_list

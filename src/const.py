@@ -25,3 +25,4 @@ class SonySelects(str, Enum):
     """Sony select values."""
 
     SELECT_INPUT_SOURCE = "select_input_source"
+    SELECT_SOUND_MODE = "select_sound_mode"

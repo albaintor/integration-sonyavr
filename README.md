@@ -31,7 +31,8 @@ Supported commands:
 
 **Select entities**
 
-- Current input source
+- Select input source
+- Select sound mode
 
 **Sensor entities**
 
