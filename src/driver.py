@@ -22,12 +22,6 @@ import selector
 import sensor
 import setup_flow
 from config import SonyEntity
-from sensor import (
-    SonySensorInputSource,
-    SonySensorMuted,
-    SonySensorSoundMode,
-    SonySensorVolume,
-)
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
 if sys.platform == "win32":
