@@ -189,24 +189,17 @@ async def on_device_connected(device_id: str):
 
     await api.set_device_state(ucapi.DeviceStates.CONNECTED)
 
-    for entity_id in _entities_from_device(device_id):
-        configured_entity = api.configured_entities.get(entity_id)
-        if configured_entity is None:
-            continue
-
-        if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
-            if (
-                configured_entity.attributes[ucapi.media_player.Attributes.STATE]
-                == ucapi.media_player.States.UNAVAILABLE
-            ):
+    for entity in _get_entities(device_id):
+        if entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
+            if entity.attributes[ucapi.media_player.Attributes.STATE] == ucapi.media_player.States.UNAVAILABLE:
                 # TODO why STANDBY?
                 api.configured_entities.update_attributes(
-                    entity_id,
+                    entity.id,
                     {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.STANDBY},
                 )
-        elif configured_entity.entity_type == ucapi.EntityTypes.SENSOR:
+        elif entity.entity_type == ucapi.EntityTypes.SENSOR:
             api.configured_entities.update_attributes(
-                entity_id, {ucapi.sensor.Attributes.STATE: ucapi.sensor.States.ON}
+                entity.id, {ucapi.sensor.Attributes.STATE: ucapi.sensor.States.ON}
             )
 
 
@@ -214,19 +207,15 @@ async def on_device_disconnected(avr_id: str):
     """Handle Device disconnection."""
     _LOG.debug("Device disconnected: %s", avr_id)
 
-    for entity_id in _entities_from_device(avr_id):
-        configured_entity = api.configured_entities.get(entity_id)
-        if configured_entity is None:
-            continue
-
-        if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
+    for entity in _get_entities(avr_id):
+        if entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
             api.configured_entities.update_attributes(
-                entity_id,
+                entity.id,
                 {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE},
             )
-        elif configured_entity.entity_type == ucapi.EntityTypes.SENSOR:
+        elif entity.entity_type == ucapi.EntityTypes.SENSOR:
             api.configured_entities.update_attributes(
-                entity_id, {ucapi.sensor.Attributes.STATE: ucapi.sensor.States.UNAVAILABLE}
+                entity.id, {ucapi.sensor.Attributes.STATE: ucapi.sensor.States.UNAVAILABLE}
             )
 
     # TODO #20 when multiple devices are supported, the device state logic isn't that simple anymore!
@@ -237,19 +226,15 @@ async def on_device_connection_error(avr_id: str, message):
     """Set entities of Device to state UNAVAILABLE if AVR connection error occurred."""
     _LOG.error(message)
 
-    for entity_id in _entities_from_device(avr_id):
-        configured_entity = api.configured_entities.get(entity_id)
-        if configured_entity is None:
-            continue
-
-        if configured_entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
+    for entity in _get_entities(avr_id):
+        if entity.entity_type == ucapi.EntityTypes.MEDIA_PLAYER:
             api.configured_entities.update_attributes(
-                entity_id,
+                entity.id,
                 {ucapi.media_player.Attributes.STATE: ucapi.media_player.States.UNAVAILABLE},
             )
-        elif configured_entity.entity_type == ucapi.EntityTypes.SENSOR:
+        elif entity.entity_type == ucapi.EntityTypes.SENSOR:
             api.configured_entities.update_attributes(
-                entity_id, {ucapi.sensor.Attributes.STATE: ucapi.sensor.States.UNAVAILABLE}
+                entity.id, {ucapi.sensor.Attributes.STATE: ucapi.sensor.States.UNAVAILABLE}
             )
 
     # TODO #20 when multiple devices are supported, the device state logic isn't that simple anymore!
@@ -286,42 +271,61 @@ async def on_device_update(avr_id: str, update: dict[str, Any] | None) -> None:
         _LOG.info("[%s] AVR update: %s", avr_id, update)
 
     attributes = None
-
-    # TODO awkward logic: this needs better support from the integration library
-    for entity_id in _entities_from_device(avr_id):
-        configured_entity = api.configured_entities.get(entity_id)
-        if configured_entity is None:
-            continue
-
-        if isinstance(configured_entity, media_player.SonyMediaPlayer):
-            attributes = configured_entity.filter_changed_attributes(update)
-        elif isinstance(configured_entity, sensor.SonySensor):
-            attributes = configured_entity.update_attributes(update)
-        elif isinstance(configured_entity, selector.SonySelect):
-            attributes = configured_entity.update_attributes(update)
+    for entity in _get_entities(avr_id):
+        if isinstance(entity, media_player.SonyMediaPlayer):
+            attributes = entity.filter_changed_attributes(update)
+        elif isinstance(entity, sensor.SonySensor):
+            attributes = entity.update_attributes(update)
+        elif isinstance(entity, selector.SonySelect):
+            attributes = entity.update_attributes(update)
 
         if attributes:
             # _LOG.debug("Sony AVR send updated attributes %s %s", entity_id, attributes)
-            api.configured_entities.update_attributes(entity_id, attributes)
+            api.configured_entities.update_attributes(entity.id, attributes)
 
 
-def _entities_from_device(device_id: str) -> list[str]:
+def _get_entities(device_id: str, include_all=False) -> list[SonyEntity]:
     """
-    Return all associated entity identifiers of the given AVR.
+    Return all associated entities of the given AVR.
 
     :param device_id: the AVR identifier
-    :return: list of entity identifiers
+    :param include_all: include both configured and available entities
+    :return: list of entities
     """
-    # dead simple for now: one media_player entity per device!
-    # TODO #21 support multiple zones: one media-player per zone
-    return [
-        f"media_player.{device_id}",
-        f"select.{device_id}.{SonySensorInputSource.ENTITY_NAME}",
-        f"sensor.{device_id}.{SonySensorVolume.ENTITY_NAME}",
-        f"sensor.{device_id}.{SonySensorMuted.ENTITY_NAME}",
-        f"sensor.{device_id}.{SonySensorInputSource.ENTITY_NAME}",
-        f"sensor.{device_id}.{SonySensorSoundMode.ENTITY_NAME}",
-    ]
+    entities = []
+    for entity_entry in api.configured_entities.get_all():
+        entity: SonyEntity | None = api.configured_entities.get(entity_entry.get("entity_id", ""))
+        if entity is None or entity.deviceid != device_id:
+            continue
+        entities.append(entity)
+    if not include_all:
+        return entities
+    for entity_entry in api.available_entities.get_all():
+        entity: SonyEntity | None = api.available_entities.get(entity_entry.get("entity_id", ""))
+        if entity is None or entity.deviceid != device_id:
+            continue
+        entities.append(entity)
+    return entities
+
+
+# def _get_entity_ids(device_id: str, include_all=False) -> list[str]:
+#     """
+#     Return all associated entity identifiers of the given AVR.
+#
+#     :param device_id: the AVR identifier
+#     :param include_all: include both configured and available entities
+#     :return: list of entity identifiers
+#     """
+#     entity_ids = [
+#         x.get("entity_id", "") for x in api.configured_entities.get_all() if x.get("device_id", "") == device_id
+#     ]
+#     if not include_all:
+#         return entity_ids
+#
+#     entity_ids.extend(
+#         [x.get("entity_id", "") for x in api.available_entities.get_all() if x.get("device_id", "") == device_id]
+#     )
+#     return entity_ids
 
 
 def _configure_new_device(device: config.DeviceInstance, connect: bool = True) -> None:
@@ -388,9 +392,9 @@ def on_device_updated(device: config.DeviceInstance) -> None:
         _LOG.debug("Disconnecting from removed device %s", device.id)
         configured = _configured_devices.pop(device.id)
         configured.events.remove_all_listeners()
-        for entity_id in _entities_from_device(configured.id):
-            api.configured_entities.remove(entity_id)
-            api.available_entities.remove(entity_id)
+        for entity in _get_entities(configured.id):
+            api.configured_entities.remove(entity.id)
+            api.available_entities.remove(entity.id)
     _configure_new_device(device, connect=True)
 
 
@@ -408,9 +412,9 @@ def on_device_removed(device: config.DeviceInstance | None) -> None:
             _LOG.debug("Disconnecting from removed AVR %s", device.id)
             configured = _configured_devices.pop(device.id)
             _LOOP.create_task(_async_remove(configured))
-            for entity_id in _entities_from_device(configured.id):
-                api.configured_entities.remove(entity_id)
-                api.available_entities.remove(entity_id)
+            for entity in _get_entities(configured.id):
+                api.configured_entities.remove(entity.id)
+                api.available_entities.remove(entity.id)
 
 
 async def _async_remove(receiver: avr.SonyDevice) -> None:
@@ -436,7 +440,7 @@ async def main():
     for device in config.devices.all():
         _configure_new_device(device, connect=False)
 
-    await _LOOP.create_task(config.devices.handle_address_change())
+    _LOOP.create_task(config.devices.handle_address_change())
 
     # _LOOP.create_task(receiver_status_poller())
     for receiver in _configured_devices.values():

@@ -38,7 +38,7 @@ class SonySensor(SonyEntity, Sensor):
         self,
         entity_id: str,
         name: str | dict[str, str],
-        config_device: DeviceInstance,
+        device_config: DeviceInstance,
         device: avr.SonyDevice,
         options: dict[Options, Any] | None = None,
         device_class: DeviceClasses = DeviceClasses.CUSTOM,
@@ -48,14 +48,14 @@ class SonySensor(SonyEntity, Sensor):
         self._device: avr.SonyDevice = device
         features = []
         attributes = dict[Any, Any]()
-        self._config_device = config_device
+        self._device_config = device_config
         self._state: States = States.UNAVAILABLE
         super().__init__(entity_id, name, features, attributes, device_class=device_class, options=options)
 
     @property
     def deviceid(self) -> str:
         """Return the device identifier."""
-        return self._device.id
+        return self._device_config.id
 
     def update_attributes(self, update: dict[str, Any] | None = None) -> dict[str, Any]:
         """Return the updated attributes of current sensor entity."""
@@ -67,13 +67,13 @@ class SonySensorVolume(SonySensor):
 
     ENTITY_NAME = "sensor_volume"
 
-    def __init__(self, config_device: DeviceInstance, device: avr.SonyDevice):
+    def __init__(self, device_config: DeviceInstance, device: avr.SonyDevice):
         """Initialize the class."""
-        entity_id = f"{create_entity_id(config_device.id, EntityTypes.SENSOR)}.{SonySensorVolume.ENTITY_NAME}"
+        entity_id = f"{create_entity_id(device_config.id, EntityTypes.SENSOR)}.{SonySensorVolume.ENTITY_NAME}"
         # TODO : dict instead of name to report language names
         self._device = device
-        self._config_device = config_device
-        super().__init__(entity_id, {"en": "Volume", "fr": "Volume"}, config_device, device)
+        self._config_device = device_config
+        super().__init__(entity_id, {"en": "Volume", "fr": "Volume"}, device_config, device)
 
     def update_attributes(self, update: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """Return updated sensor value from full update if provided or sensor value if no udpate is provided."""
@@ -95,13 +95,13 @@ class SonySensorMuted(SonySensor):
 
     ENTITY_NAME = "sensor_muted"
 
-    def __init__(self, config_device: DeviceInstance, device: avr.SonyDevice):
+    def __init__(self, device_config: DeviceInstance, device: avr.SonyDevice):
         """Initialize the class."""
-        entity_id = f"{create_entity_id(config_device.id, EntityTypes.SENSOR)}.{SonySensorMuted.ENTITY_NAME}"
+        entity_id = f"{create_entity_id(device_config.id, EntityTypes.SENSOR)}.{SonySensorMuted.ENTITY_NAME}"
         self._device = device
-        self._config_device = config_device
+        self._config_device = device_config
         super().__init__(
-            entity_id, {"en": "Muted", "fr": "Son coupé"}, config_device, device, None, DeviceClasses.BINARY
+            entity_id, {"en": "Muted", "fr": "Son coupé"}, device_config, device, None, DeviceClasses.BINARY
         )
 
     def update_attributes(self, update: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -124,13 +124,13 @@ class SonySensorInputSource(SonySensor):
 
     ENTITY_NAME = "sensor_input"
 
-    def __init__(self, config_device: DeviceInstance, device: avr.SonyDevice):
+    def __init__(self, device_config: DeviceInstance, device: avr.SonyDevice):
         """Initialize the class."""
-        entity_id = f"{create_entity_id(config_device.id, EntityTypes.SENSOR)}.{SonySensorInputSource.ENTITY_NAME}"
+        entity_id = f"{create_entity_id(device_config.id, EntityTypes.SENSOR)}.{SonySensorInputSource.ENTITY_NAME}"
         # TODO : dict instead of name to report language names
         self._device = device
-        self._config_device = config_device
-        super().__init__(entity_id, {"en": "Input", "fr": "Entrée"}, config_device, device)
+        self._config_device = device_config
+        super().__init__(entity_id, {"en": "Input", "fr": "Entrée"}, device_config, device)
 
     def update_attributes(self, update: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """Return updated sensor value from full update if provided or sensor value if no udpate is provided."""
@@ -152,13 +152,13 @@ class SonySensorSoundMode(SonySensor):
 
     ENTITY_NAME = "sensor_sound_mode"
 
-    def __init__(self, config_device: DeviceInstance, device: avr.SonyDevice):
+    def __init__(self, device_config: DeviceInstance, device: avr.SonyDevice):
         """Initialize the class."""
-        entity_id = f"{create_entity_id(config_device.id, EntityTypes.SENSOR)}.{SonySensorSoundMode.ENTITY_NAME}"
+        entity_id = f"{create_entity_id(device_config.id, EntityTypes.SENSOR)}.{SonySensorSoundMode.ENTITY_NAME}"
         # TODO : dict instead of name to report language names
         self._device = device
-        self._config_device = config_device
-        super().__init__(entity_id, {"en": "Sound mode", "fr": "Mode sonore"}, config_device, device)
+        self._config_device = device_config
+        super().__init__(entity_id, {"en": "Sound mode", "fr": "Mode sonore"}, device_config, device)
 
     def update_attributes(self, update: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """Return updated sensor value from full update if provided or sensor value if no udpate is provided."""

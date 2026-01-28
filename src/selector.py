@@ -38,7 +38,7 @@ class SonySelect(SonyEntity):
         self,
         entity_id: str,
         name: str | dict[str, str],
-        config_device: DeviceInstance,
+        device_config: DeviceInstance,
         device: avr.SonyDevice,
         select_handler: CommandHandler,
     ):
@@ -46,7 +46,7 @@ class SonySelect(SonyEntity):
         # pylint: disable = R0801
         features = []
         attributes = dict[Any, Any]()
-        self._config_device = config_device
+        self._device_config = device_config
         self._device: avr.SonyDevice = device
         self._state: States = States.ON
         self._select_handler: CommandHandler = select_handler
@@ -65,7 +65,7 @@ class SonySelect(SonyEntity):
     @property
     def deviceid(self) -> str:
         """Return device identifier."""
-        return self._device.id
+        return self._device_config.id
 
     @property
     def current_option(self) -> str:
@@ -79,6 +79,7 @@ class SonySelect(SonyEntity):
 
     def update_attributes(self, update: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """Return updated selector value from full update if provided or sensor value if no udpate is provided."""
+        _LOG.debug("[%s] Update selector %s", self._device_config.address, update)
         if update:
             if self.SELECT_NAME in update:
                 return update[self.SELECT_NAME]
@@ -111,7 +112,7 @@ class SonySelect(SonyEntity):
             except ValueError as ex:
                 _LOG.warning(
                     "[%s] Invalid option %s in list %s %s",
-                    self._config_device.address,
+                    self._device_config.address,
                     self.current_option,
                     options,
                     ex,
@@ -129,7 +130,7 @@ class SonySelect(SonyEntity):
             except ValueError as ex:
                 _LOG.warning(
                     "[%s] Invalid option %s in list %s %s",
-                    self._config_device.address,
+                    self._device_config.address,
                     self.current_option,
                     options,
                     ex,
@@ -144,17 +145,17 @@ class SonyInputSourceSelect(SonySelect):
     ENTITY_NAME = "input_source"
     SELECT_NAME = SonySelects.SELECT_INPUT_SOURCE
 
-    def __init__(self, config_device: DeviceInstance, device: avr.SonyDevice):
+    def __init__(self, device_config: DeviceInstance, device: avr.SonyDevice):
         """Initialize the class."""
         # pylint: disable=W1405,R0801
-        entity_id = f"{create_entity_id(config_device.id, PatchedEntityTypes.SELECT)}.{self.ENTITY_NAME}"
+        entity_id = f"{create_entity_id(device_config.id, PatchedEntityTypes.SELECT)}.{self.ENTITY_NAME}"
         super().__init__(
             entity_id,
             {
-                "en": f"{config_device.get_device_part()}Input source",
-                "fr": f"{config_device.get_device_part()}Source",
+                "en": f"{device_config.get_device_part()}Input source",
+                "fr": f"{device_config.get_device_part()}Source",
             },
-            config_device,
+            device_config,
             device,
             device.select_source,
         )

@@ -28,11 +28,12 @@ _LOG = logging.getLogger(__name__)
 class SonyMediaPlayer(MediaPlayer, SonyEntity):
     """Representation of a Sony Media Player entity."""
 
-    def __init__(self, device: DeviceInstance, receiver: avr.SonyDevice):
+    def __init__(self, device_config: DeviceInstance, receiver: avr.SonyDevice):
         """Initialize the class."""
         self._receiver: avr.SonyDevice = receiver
+        self._device_config = device_config
 
-        entity_id = create_entity_id(device.id, EntityTypes.MEDIA_PLAYER)
+        entity_id = create_entity_id(device_config.id, EntityTypes.MEDIA_PLAYER)
         features = [
             Features.ON_OFF,
             Features.VOLUME,
@@ -53,7 +54,7 @@ class SonyMediaPlayer(MediaPlayer, SonyEntity):
 
         super().__init__(
             entity_id,
-            device.name,
+            device_config.name,
             features,
             attributes,
             device_class=DeviceClasses.RECEIVER,
@@ -63,7 +64,7 @@ class SonyMediaPlayer(MediaPlayer, SonyEntity):
     @property
     def deviceid(self) -> str:
         """Return the device identifier."""
-        return self._receiver.id
+        return self._device_config.id
 
     async def command(self, cmd_id: str, params: dict[str, Any] | None = None, *, websocket: Any) -> StatusCodes:
         """
