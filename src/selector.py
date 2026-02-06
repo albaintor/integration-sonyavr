@@ -6,29 +6,22 @@ Select entity functions.
 """
 
 import logging
-from enum import Enum
 from typing import Any
 
-from ucapi import StatusCodes
+from ucapi import EntityTypes, Select, StatusCodes
 from ucapi.api_definitions import CommandHandler
+from ucapi.select import Attributes, Commands, States
 
 import avr
-from config import DeviceInstance, PatchedEntityTypes, SonyEntity, create_entity_id
+from config import DeviceInstance, SonyEntity, create_entity_id
 from const import SonySelects
-
-
-class States(str, Enum):
-    """Select entity states."""
-
-    ON = "ON"
-
 
 _LOG = logging.getLogger(__name__)
 
 
 # pylint: disable=W1405,R0801
-class SonySelect(SonyEntity):
-    """Representation of a Kodi select entity."""
+class SonySelect(SonyEntity, Select):
+    """Representation of a Sony AVR select entity."""
 
     ENTITY_NAME = "select"
     SELECT_NAME: SonySelects
@@ -44,7 +37,6 @@ class SonySelect(SonyEntity):
     ):
         """Initialize the class."""
         # pylint: disable = R0801
-        features = []
         attributes = dict[Any, Any]()
         self._device_config = device_config
         self._device: avr.SonyDevice = device
@@ -53,13 +45,7 @@ class SonySelect(SonyEntity):
         super().__init__(
             identifier=entity_id,
             name=name,
-            entity_type=PatchedEntityTypes.SELECT,
-            features=features,
             attributes=attributes,
-            device_class=None,
-            options=None,
-            area=None,
-            cmd_handler=self.command,
         )
 
     @property
@@ -85,22 +71,23 @@ class SonySelect(SonyEntity):
                 return update[self.SELECT_NAME]
             return None
         return {
-            "current_option": self.current_option,
-            "options": self.select_options,
+            Attributes.CURRENT_OPTION: self.current_option,
+            Attributes.OPTIONS: self.select_options,
+            Attributes.STATE: States.ON,
         }
 
     async def command(self, cmd_id: str, params: dict[str, Any] | None = None, *, websocket: Any) -> StatusCodes:
         """Process selector command."""
         # pylint: disable=R0911
-        if cmd_id == "select_option" and params:
+        if cmd_id == Commands.SELECT_OPTION and params:
             option = params.get("option", None)
             return await self._select_handler(option)
         options = self.select_options
-        if cmd_id == "select_first" and len(options) > 0:
+        if cmd_id == Commands.SELECT_FIRST and len(options) > 0:
             return await self._select_handler(options[0])
-        if cmd_id == "select_last" and len(options) > 0:
+        if cmd_id == Commands.SELECT_LAST and len(options) > 0:
             return await self._select_handler(options[len(options) - 1])
-        if cmd_id == "select_next" and len(options) > 0:
+        if cmd_id == Commands.SELECT_NEXT and len(options) > 0:
             cycle = params.get("cycle", False)
             try:
                 index = options.index(self.current_option) + 1
@@ -118,7 +105,7 @@ class SonySelect(SonyEntity):
                     ex,
                 )
                 return StatusCodes.BAD_REQUEST
-        if cmd_id == "select_previous" and len(options) > 0:
+        if cmd_id == Commands.SELECT_PREVIOUS and len(options) > 0:
             cycle = params.get("cycle", False)
             try:
                 index = options.index(self.current_option) - 1
@@ -148,7 +135,7 @@ class SonyInputSourceSelect(SonySelect):
     def __init__(self, device_config: DeviceInstance, device: avr.SonyDevice):
         """Initialize the class."""
         # pylint: disable=W1405,R0801
-        entity_id = f"{create_entity_id(device_config.id, PatchedEntityTypes.SELECT)}.{self.ENTITY_NAME}"
+        entity_id = f"{create_entity_id(device_config.id, EntityTypes.SELECT)}.{self.ENTITY_NAME}"
         super().__init__(
             entity_id,
             {
@@ -180,7 +167,7 @@ class SonySoundModeSelect(SonySelect):
     def __init__(self, device_config: DeviceInstance, device: avr.SonyDevice):
         """Initialize the class."""
         # pylint: disable=W1405,R0801
-        entity_id = f"{create_entity_id(device_config.id, PatchedEntityTypes.SELECT)}.{self.ENTITY_NAME}"
+        entity_id = f"{create_entity_id(device_config.id, EntityTypes.SELECT)}.{self.ENTITY_NAME}"
         super().__init__(
             entity_id,
             {
