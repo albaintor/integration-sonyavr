@@ -29,6 +29,8 @@ from songpal import (
 from songpal.containers import InterfaceInfo, PlayInfo, Setting, Sysinfo
 from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import States
+from ucapi.select import Attributes as SelectAttr
+from ucapi.select import States as SelectStates
 
 from config import DeviceInstance
 from const import SonySelects, SonySensors
@@ -337,7 +339,9 @@ class SonyDevice:
                 _LOG.debug("Sony AVR New active source: %s", self._active_source)
                 updated_data[MediaAttr.SOURCE] = self.source
                 updated_data[SonySensors.SENSOR_INPUT] = self.source
-                updated_data[SonySelects.SELECT_INPUT_SOURCE] = {"current_option": self.source if self.source else ""}
+                updated_data[SonySelects.SELECT_INPUT_SOURCE] = {
+                    SelectAttr.CURRENT_OPTION: self.source if self.source else ""
+                }
                 self.events.emit(Events.UPDATE, self.id, updated_data)
             elif bool(updated_data):
                 self.events.emit(Events.UPDATE, self.id, updated_data)
@@ -383,11 +387,11 @@ class SonyDevice:
                         self._sound_fields.currentValue = setting.currentValue
                         updated_data[SonySensors.SENSOR_SOUND_MODE] = self.sound_mode
                         updated_data[MediaAttr.SOUND_MODE] = self.sound_mode
-                        updated_data[SonySelects.SELECT_SOUND_MODE] = {"current_option": self.sound_mode}
+                        updated_data[SonySelects.SELECT_SOUND_MODE] = {SelectAttr.CURRENT_OPTION: self.sound_mode}
                     else:
                         updated_data[SonySensors.SENSOR_SOUND_MODE] = setting.currentValue
                         updated_data[MediaAttr.SOUND_MODE] = setting.currentValue
-                        updated_data[SonySelects.SELECT_SOUND_MODE] = {"current_option": self.sound_mode}
+                        updated_data[SonySelects.SELECT_SOUND_MODE] = {SelectAttr.CURRENT_OPTION: self.sound_mode}
             if updated_data:
                 self.events.emit(Events.UPDATE, self.id, updated_data)
 
@@ -577,12 +581,14 @@ class SonyDevice:
             SonySensors.SENSOR_MUTED: "on" if self.is_volume_muted else "off",
             SonySensors.SENSOR_SOUND_MODE: self.sound_mode,
             SonySelects.SELECT_INPUT_SOURCE: {
-                "current_option": self.source if self.source else "",
-                "options": self.source_list,
+                SelectAttr.CURRENT_OPTION: self.source if self.source else "",
+                SelectAttr.OPTIONS: self.source_list,
+                SelectAttr.STATE: SelectStates.ON,
             },
             SonySelects.SELECT_SOUND_MODE: {
-                "current_option": self.sound_mode,
-                "options": self.sound_mode_list,
+                SelectAttr.CURRENT_OPTION: self.sound_mode,
+                SelectAttr.OPTIONS: self.sound_mode_list,
+                SelectAttr.STATE: SelectStates.ON,
             },
         }
         return updated_data
