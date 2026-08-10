@@ -6,31 +6,24 @@ This module implements the AVR AVR receiver communication of the Remote Two inte
 """
 
 import asyncio
-import logging
-import time
 from asyncio import AbstractEventLoop, CancelledError, Lock, Task, shield
 from collections import OrderedDict
+from collections.abc import Awaitable, Callable, Coroutine
+import contextlib
 from enum import StrEnum
 from functools import wraps
-from typing import Any, Awaitable, Callable, Concatenate, Coroutine, ParamSpec, TypeVar
+import logging
+import time
+from typing import Any, Concatenate, ParamSpec, cast
 
-import ucapi
 from aiohttp import ClientOSError
 from pyee.asyncio import AsyncIOEventEmitter
-from songpal import (
-    ConnectChange,
-    ContentChange,
-    Device,
-    PowerChange,
-    SettingChange,
-    SongpalException,
-    VolumeChange,
-)
-from songpal.containers import InterfaceInfo, PlayInfo, Setting, Sysinfo
-from ucapi.media_player import Attributes as MediaAttr
-from ucapi.media_player import States
-from ucapi.select import Attributes as SelectAttr
-from ucapi.select import States as SelectStates
+from songpal import ConnectChange, ContentChange, Device, PowerChange, SettingChange, SongpalException, VolumeChange
+from songpal.containers import InterfaceInfo, PlayInfo, Setting, Sysinfo, Volume
+from songpal.notification import ChangeNotification
+import ucapi
+from ucapi.media_player import Attributes as MediaAttr, States
+from ucapi.select import Attributes as SelectAttr, States as SelectStates
 
 from config import DeviceInstance
 from const import SonySelects, SonySensors
@@ -43,8 +36,8 @@ BUFFER_LIFETIME = 30
 POWER_TIMEOUT = 10
 POWER_CHECKS = 10
 ERROR_OS_WAIT = 0.5
+VOLUME_DEBOUNCE_DELAY = 0.2
 
-_SonyDeviceT = TypeVar("_SonyDeviceT", bound="SonyDevice")
 _P = ParamSpec("_P")
 
 
@@ -69,8 +62,8 @@ SONY_PLAYBACK_STATE_MAPPING = {
 async def retry_call_command(
     timeout: float,
     bufferize: bool,
-    func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
-    obj: _SonyDeviceT,
+    func: Callable[Concatenate["SonyDevice", _P], Awaitable[ucapi.StatusCodes]],
+    obj: "SonyDevice",
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> ucapi.StatusCodes:
@@ -89,29 +82,28 @@ async def retry_call_command(
         # Else (no bufferize) wait (not more than "timeout" seconds) for the connection to complete
         async with asyncio.timeout(max(timeout - 1, 1)):
             await shield(obj._connect_task)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # (Re)connection failed at least at given time
-        if obj.state == States.OFF:
-            log_function = _LOG.debug
-        else:
-            log_function = _LOG.error
+        log_function = _LOG.debug if obj.state == States.OFF else _LOG.error
         log_function("Timeout for reconnect, command will probably fail")
     # Try to send the command anyway
     await func(obj, *args, **kwargs)
     return ucapi.StatusCodes.OK
 
 
-def retry(*, timeout: float = 5, bufferize=False) -> Callable[
-    [Callable[_P, Awaitable[ucapi.StatusCodes]]],
-    Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]],
+def retry(
+    *, timeout: float = 5, bufferize=False
+) -> Callable[
+    [Callable[Concatenate["SonyDevice", _P], Awaitable[ucapi.StatusCodes]]],
+    Callable[Concatenate["SonyDevice", _P], Coroutine[Any, Any, ucapi.StatusCodes]],
 ]:
     """Retry command."""
 
     def decorator(
-        func: Callable[Concatenate[_SonyDeviceT, _P], Awaitable[ucapi.StatusCodes | None]],
-    ) -> Callable[Concatenate[_SonyDeviceT, _P], Coroutine[Any, Any, ucapi.StatusCodes | None]]:
+        func: Callable[Concatenate["SonyDevice", _P], Awaitable[ucapi.StatusCodes]],
+    ) -> Callable[Concatenate["SonyDevice", _P], Coroutine[Any, Any, ucapi.StatusCodes]]:
         @wraps(func)
-        async def wrapper(obj: _SonyDeviceT, *args: _P.args, **kwargs: _P.kwargs) -> ucapi.StatusCodes:
+        async def wrapper(obj: "SonyDevice", *args: _P.args, **kwargs: _P.kwargs) -> ucapi.StatusCodes:
             """Wrap all command methods."""
             # pylint: disable = W0212
             try:
@@ -120,10 +112,7 @@ def retry(*, timeout: float = 5, bufferize=False) -> Callable[
                     return ucapi.StatusCodes.OK
                 return await retry_call_command(timeout, bufferize, func, obj, *args, **kwargs)
             except SongpalException as ex:
-                if obj.state == States.OFF:
-                    log_function = _LOG.debug
-                else:
-                    log_function = _LOG.error
+                log_function = _LOG.debug if obj.state == States.OFF else _LOG.error
                 log_function(
                     "Error calling %s on [%s(%s)]: %r trying to reconnect",
                     func.__name__,
@@ -178,7 +167,7 @@ class SonyDevice:
 
         self._interface_info: InterfaceInfo | None = None
         self._sysinfo: Sysinfo | None = None
-        self._volume_control = None
+        self._volume_control: Volume | None = None
         self._volume_min: float = 0
         self._volume_max: float = 1
         self._volume: float = 0
@@ -197,6 +186,7 @@ class SonyDevice:
         self._connect_lock = Lock()
         self._connect_task: Task[None] | None = None
         self._check_device_task: Task[None] | None = None
+        self._volume_debounce_task: Task[None] | None = None
         self._buffered_callbacks = {}
         self._reconnect_retry = 0
         _LOG.debug(
@@ -218,8 +208,8 @@ class SonyDevice:
                 self._websocket_task.cancel()
                 await self._receiver.stop_listen_notifications()
             # pylint: disable = W0718
-            except Exception:
-                pass
+            except Exception as ex:
+                _LOG.debug("Ignoring websocket shutdown error: %s", ex)
             finally:
                 self._websocket_task = None
         self._websocket_task = self.event_loop.create_task(self._receiver.listen_notifications())
@@ -271,7 +261,7 @@ class SonyDevice:
                     async with asyncio.timeout(DEFAULT_TIMEOUT):
                         task = asyncio.create_task(self._receiver.get_supported_methods())
                         await task
-                except (asyncio.TimeoutError, SongpalException) as ex:
+                except (TimeoutError, SongpalException) as ex:
                     _LOG.debug("Sony AVR Failed to reconnect: %s", ex)
                 else:
                     # We need to inform Remote about the state in case we are coming
@@ -310,7 +300,8 @@ class SonyDevice:
         # pylint: disable = R0915
         _LOG.debug("Sony AVR activate websocket")
 
-        async def _volume_changed(volume: VolumeChange):
+        async def _volume_changed(notification: ChangeNotification) -> None:
+            volume = cast("VolumeChange", notification)
             _LOG.debug("Sony AVR volume changed: %s", volume)
             updated_data = {}
             new_volume = float(volume.volume - self._volume_min) * 100 / float(self._volume_max - self._volume_min)
@@ -325,11 +316,12 @@ class SonyDevice:
             if updated_data:
                 self.events.emit(Events.UPDATE, self.id, updated_data)
 
-        async def _source_changed(content: ContentChange):
+        async def _source_changed(notification: ChangeNotification) -> None:
+            content = cast("ContentChange", notification)
             _LOG.debug("Sony AVR Source changed: %s", content)
             self._play_info = [content]
             updated_data = {}
-            if content.state and SONY_PLAYBACK_STATE_MAPPING.get(content.state, None):
+            if content.state and SONY_PLAYBACK_STATE_MAPPING.get(content.state):
                 self._playback_state = SONY_PLAYBACK_STATE_MAPPING.get(content.state)
                 if self.update_state():
                     updated_data[MediaAttr.STATE] = self.state
@@ -339,9 +331,7 @@ class SonyDevice:
                 _LOG.debug("Sony AVR New active source: %s", self._active_source)
                 updated_data[MediaAttr.SOURCE] = self.source
                 updated_data[SonySensors.SENSOR_INPUT] = self.source
-                updated_data[SonySelects.SELECT_INPUT_SOURCE] = {
-                    SelectAttr.CURRENT_OPTION: self.source if self.source else ""
-                }
+                updated_data[SonySelects.SELECT_INPUT_SOURCE] = {SelectAttr.CURRENT_OPTION: self.source or ""}
                 self.events.emit(Events.UPDATE, self.id, updated_data)
             elif bool(updated_data):
                 self.events.emit(Events.UPDATE, self.id, updated_data)
@@ -363,7 +353,8 @@ class SonyDevice:
                     break
             self._check_device_task = None
 
-        async def _power_changed(power: PowerChange):
+        async def _power_changed(notification: ChangeNotification) -> None:
+            power = cast("PowerChange", notification)
             _LOG.debug("Sony AVR Power changed: %s", power)
             self._powered = power.status
             if self.update_state():
@@ -372,30 +363,31 @@ class SonyDevice:
                 if self._check_device_task is None:
                     self._check_device_task = self.event_loop.create_task(_wait_power_on())
             elif self.state not in [States.UNKNOWN, States.UNAVAILABLE] and self._check_device_task:
-                try:
+                with contextlib.suppress(CancelledError):
                     self._check_device_task.cancel()
-                except CancelledError:
-                    pass
                 self._check_device_task = None
 
-        async def _setting_changed(setting: SettingChange):
+        async def _setting_changed(notification: ChangeNotification) -> None:
+            setting = cast("SettingChange", notification)
             _LOG.debug("Sony AVR setting changed: %s", setting)
             updated_data = {}
-            if setting.target == "soundField":
-                if self._sound_fields is None or setting.currentValue != self._sound_fields.currentValue:
-                    if self._sound_fields is not None:
-                        self._sound_fields.currentValue = setting.currentValue
-                        updated_data[SonySensors.SENSOR_SOUND_MODE] = self.sound_mode
-                        updated_data[MediaAttr.SOUND_MODE] = self.sound_mode
-                        updated_data[SonySelects.SELECT_SOUND_MODE] = {SelectAttr.CURRENT_OPTION: self.sound_mode}
-                    else:
-                        updated_data[SonySensors.SENSOR_SOUND_MODE] = setting.currentValue
-                        updated_data[MediaAttr.SOUND_MODE] = setting.currentValue
-                        updated_data[SonySelects.SELECT_SOUND_MODE] = {SelectAttr.CURRENT_OPTION: self.sound_mode}
+            if setting.target == "soundField" and (
+                self._sound_fields is None or setting.currentValue != self._sound_fields.currentValue
+            ):
+                if self._sound_fields is not None:
+                    self._sound_fields.currentValue = setting.currentValue
+                    updated_data[SonySensors.SENSOR_SOUND_MODE] = self.sound_mode
+                    updated_data[MediaAttr.SOUND_MODE] = self.sound_mode
+                    updated_data[SonySelects.SELECT_SOUND_MODE] = {SelectAttr.CURRENT_OPTION: self.sound_mode}
+                else:
+                    updated_data[SonySensors.SENSOR_SOUND_MODE] = setting.currentValue
+                    updated_data[MediaAttr.SOUND_MODE] = setting.currentValue
+                    updated_data[SonySelects.SELECT_SOUND_MODE] = {SelectAttr.CURRENT_OPTION: self.sound_mode}
             if updated_data:
                 self.events.emit(Events.UPDATE, self.id, updated_data)
 
-        async def _try_reconnect(connect: ConnectChange):
+        async def _try_reconnect(notification: ChangeNotification) -> None:
+            connect = cast("ConnectChange", notification)
             _LOG.debug("Disconnected: %s", connect.exception)
             if not self._connect_task:
                 _LOG.warning("Running connect task")
@@ -450,7 +442,7 @@ class SonyDevice:
                     await asyncio.sleep(ERROR_OS_WAIT)
                     await self._receiver.get_supported_methods()
                 else:
-                    raise ex
+                    raise
 
             if self._interface_info is None:
                 self._interface_info = await self._receiver.get_interface_information()
@@ -518,6 +510,7 @@ class SonyDevice:
     async def close_connections(self):
         """Close connections from AVR."""
         _LOG.debug("Close connections %s", self.id)
+        await self._cancel_volume_debounce()
         if self._connecting:
             _LOG.debug("Connecting in parallel, abort closing connections")
             return
@@ -559,17 +552,17 @@ class SonyDevice:
     @property
     def unique_id(self) -> str:
         """Return the unique ID of the device (serial number or mac address if none)."""
-        return self._unique_id
+        return self._unique_id or self.id
 
     @property
     def attributes(self) -> dict[str, Any]:
         """Return the device attributes."""
-        updated_data = {
+        return {
             MediaAttr.STATE: self.state,
             MediaAttr.MUTED: self.is_volume_muted,
             MediaAttr.VOLUME: self.volume_level,
             MediaAttr.SOURCE_LIST: self.source_list,
-            MediaAttr.SOURCE: self.source if self.source else "",
+            MediaAttr.SOURCE: self.source or "",
             MediaAttr.SOUND_MODE_LIST: self.sound_mode_list,
             MediaAttr.SOUND_MODE: self.sound_mode,
             MediaAttr.MEDIA_IMAGE_URL: self.media_image_url,
@@ -581,7 +574,7 @@ class SonyDevice:
             SonySensors.SENSOR_MUTED: "on" if self.is_volume_muted else "off",
             SonySensors.SENSOR_SOUND_MODE: self.sound_mode,
             SonySelects.SELECT_INPUT_SOURCE: {
-                SelectAttr.CURRENT_OPTION: self.source if self.source else "",
+                SelectAttr.CURRENT_OPTION: self.source or "",
                 SelectAttr.OPTIONS: self.source_list,
                 SelectAttr.STATE: SelectStates.ON,
             },
@@ -591,7 +584,6 @@ class SonyDevice:
                 SelectAttr.STATE: SelectStates.ON,
             },
         }
-        return updated_data
 
     @property
     def available(self) -> bool:
@@ -651,9 +643,7 @@ class SonyDevice:
             self._state = self._playback_state
         else:
             self._state = States.ON
-        if old_state != self._state:
-            return True
-        return False
+        return old_state != self._state
 
     @property
     def state(self) -> States:
@@ -668,7 +658,7 @@ class SonyDevice:
     @property
     def source(self) -> str:
         """Return the current input source."""
-        return getattr(self._active_source, "title", None)
+        return getattr(self._active_source, "title", None) or ""
 
     @property
     def is_volume_muted(self) -> bool:
@@ -685,10 +675,7 @@ class SonyDevice:
         """Return the available sound modes."""
         if self._sound_fields is None:
             return []
-        sound_fields: list[str] = []
-        for opt in self._sound_fields.candidate:
-            sound_fields.append(opt.title)
-        return sound_fields
+        return [opt.title for opt in self._sound_fields.candidate]
 
     @property
     def sound_mode(self) -> str:
@@ -703,52 +690,30 @@ class SonyDevice:
     @property
     def media_image_url(self) -> str:
         """Image url of current playing media."""
-        try:
-            return self.get_current_play_info().content.thumbnailUrl
-        # pylint: disable = W0718
-        except Exception:
-            pass
-        return ""
+        play_info = self.get_current_play_info()
+        return getattr(getattr(play_info, "content", None), "thumbnailUrl", "")
 
     @property
     def media_title(self) -> str:
         """Title of current playing media."""
-        try:
-            return self.get_current_play_info().title
-        # pylint: disable = W0718
-        except Exception:
-            pass
-        return ""
+        return getattr(self.get_current_play_info(), "title", "")
 
     @property
     def media_artist(self) -> str:
         """Artist of current playing media, music track only."""
-        try:
-            return self.get_current_play_info().artist
-        # pylint: disable = W0718
-        except Exception:
-            pass
-        return ""
+        return getattr(self.get_current_play_info(), "artist", "")
 
     @property
     def media_album_name(self) -> str:
         """Album name of current playing media, music track only."""
-        try:
-            return self.get_current_play_info().albumName
-        # pylint: disable = W0718
-        except Exception:
-            pass
-        return ""
+        return getattr(self.get_current_play_info(), "albumName", "")
 
     def get_current_play_info(self) -> PlayInfo | None:
         """Get current playback information."""
-        try:
+        if self._play_info:
             for play_info in self._play_info:
                 if play_info.state and play_info.state != "STOPPED":
                     return play_info
-        # pylint: disable = W0718
-        except Exception:
-            pass
         return None
 
     @retry(bufferize=True)
@@ -767,24 +732,57 @@ class SonyDevice:
                 _LOG.debug("Device is probably already off")
                 self._state = States.OFF
             else:
-                raise ex
+                raise
         return ucapi.StatusCodes.OK
 
-    @retry()
     async def set_volume_level(self, volume: float | None) -> ucapi.StatusCodes:
         """Set volume level, range 0..100."""
         if volume is None:
             return ucapi.StatusCodes.BAD_REQUEST
+
+        await self._cancel_volume_debounce()
+        self._volume = volume
+        self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
+        self._volume_debounce_task = self.event_loop.create_task(self._debounced_set_volume_level(volume))
+        return ucapi.StatusCodes.OK
+
+    async def _debounced_set_volume_level(self, volume: float) -> None:
+        """Send the latest absolute volume after the debounce interval."""
+        try:
+            await asyncio.sleep(VOLUME_DEBOUNCE_DELAY)
+            status = await self._send_volume_level(volume)
+            if status != ucapi.StatusCodes.OK:
+                _LOG.warning("Sony AVR failed to set debounced volume to %s: %s", volume, status)
+        finally:
+            if self._volume_debounce_task is asyncio.current_task():
+                self._volume_debounce_task = None
+
+    async def _cancel_volume_debounce(self) -> None:
+        """Cancel an outstanding absolute-volume update."""
+        task = self._volume_debounce_task
+        self._volume_debounce_task = None
+        if task is None or task is asyncio.current_task():
+            return
+        task.cancel()
+        with contextlib.suppress(CancelledError):
+            await task
+
+    @retry()
+    async def _send_volume_level(self, volume: float) -> ucapi.StatusCodes:
+        """Send an absolute volume level to the receiver."""
+        if self._volume_control is None:
+            return ucapi.StatusCodes.SERVICE_UNAVAILABLE
         volume_sony = volume * (self._volume_max - self._volume_min) / 100 + self._volume_min
         _LOG.debug("Sony AVR setting volume to %s", volume_sony)
-        self._volume = volume
         await self._volume_control.set_volume(round(volume_sony))
-        self.events.emit(Events.UPDATE, self.id, {MediaAttr.VOLUME: self.volume_level})
         return ucapi.StatusCodes.OK
 
     @retry()
     async def volume_up(self) -> ucapi.StatusCodes:
         """Send volume-up command to AVR."""
+        if self._volume_control is None:
+            return ucapi.StatusCodes.SERVICE_UNAVAILABLE
+        await self._cancel_volume_debounce()
         self._volume = min(self._volume + self._volume_step, 100)
         volume_sony = self._volume * float(self._volume_max - self._volume_min) / 100 + self._volume_min
         await self._volume_control.set_volume(round(volume_sony))
@@ -794,6 +792,9 @@ class SonyDevice:
     @retry()
     async def volume_down(self) -> ucapi.StatusCodes:
         """Send volume-down command to AVR."""
+        if self._volume_control is None:
+            return ucapi.StatusCodes.SERVICE_UNAVAILABLE
+        await self._cancel_volume_debounce()
         self._volume = max(self._volume - self._volume_step, 0)
         volume_sony = self._volume * (self._volume_max - self._volume_min) / 100 + self._volume_min
         await self._volume_control.set_volume(round(volume_sony))
@@ -803,6 +804,8 @@ class SonyDevice:
     @retry()
     async def mute(self, muted: bool) -> ucapi.StatusCodes:
         """Send mute command to AVR."""
+        if self._volume_control is None:
+            return ucapi.StatusCodes.SERVICE_UNAVAILABLE
         _LOG.debug("Sending mute: %s", muted)
         await self._volume_control.set_mute(muted)
         self.events.emit(Events.UPDATE, self.id, {MediaAttr.MUTED: muted})

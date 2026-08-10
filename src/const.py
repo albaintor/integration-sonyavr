@@ -4,7 +4,7 @@
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 DEFAULT_PORT = 10000
 DEFAULT_VOLUME_STEP = 2.0
@@ -12,7 +12,7 @@ DEFAULT_VOLUME_STEP = 2.0
 SIMPLE_COMMANDS = ["ZONE_HDMI_OUTPUT_AB", "ZONE_HDMI_OUTPUT_A", "ZONE_HDMI_OUTPUT_B", "ZONE_HDMI_OUTPUT_OFF"]
 
 
-class SonySensors(str, Enum):
+class SonySensors(StrEnum):
     """Sony sensor values."""
 
     SENSOR_VOLUME = "sensor_volume"
@@ -21,7 +21,7 @@ class SonySensors(str, Enum):
     SENSOR_SOUND_MODE = "sensor_sound_mode"
 
 
-class SonySelects(str, Enum):
+class SonySelects(StrEnum):
     """Sony select values."""
 
     SELECT_INPUT_SOURCE = "select_input_source"

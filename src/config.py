@@ -5,20 +5,21 @@ Configuration handling of the integration driver.
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
+from asyncio import Lock
+from collections.abc import Callable, Iterator
 import dataclasses
+from dataclasses import dataclass, field, fields
 import json
 import logging
-import os
-from asyncio import Lock
-from dataclasses import dataclass, field, fields
-from typing import Callable, Iterator
+from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from songpal import Device
 from ucapi import Entity, EntityTypes
 
-import discover
 from const import DEFAULT_PORT, DEFAULT_VOLUME_STEP
+import discover
 
 _LOG = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ class SonyEntity(Entity):
     @property
     def deviceid(self) -> str:
         """Return the device identifier."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 def create_entity_id(avr_id: str, entity_type: EntityTypes) -> str:
@@ -85,8 +86,8 @@ class DeviceInstance:
 class _EnhancedJSONEncoder(json.JSONEncoder):
     """Python dataclass json encoder."""
 
-    def default(self, o):
-        if dataclasses.is_dataclass(o):
+    def default(self, o: Any) -> Any:
+        if dataclasses.is_dataclass(o) and not isinstance(o, type):
             return dataclasses.asdict(o)
         return super().default(o)
 
@@ -107,7 +108,7 @@ class Devices:
         :param data_path: configuration path for the configuration file and client device certificates.
         """
         self._data_path: str = data_path
-        self._cfg_file_path: str = os.path.join(data_path, _CFG_FILENAME)
+        self._cfg_file_path = Path(data_path) / _CFG_FILENAME
         self._config: list[DeviceInstance] = []
         self._add_handler = add_handler
         self._remove_handler = remove_handler
@@ -130,10 +131,7 @@ class Devices:
 
     def contains(self, avr_id: str) -> bool:
         """Check if there's a device with the given device identifier."""
-        for item in self._config:
-            if item.id == avr_id:
-                return True
-        return False
+        return any(item.id == avr_id for item in self._config)
 
     def add_or_update(self, atv: DeviceInstance) -> None:
         """Add a new configured device."""
@@ -188,8 +186,8 @@ class Devices:
         """Remove the configuration file."""
         self._config = []
 
-        if os.path.exists(self._cfg_file_path):
-            os.remove(self._cfg_file_path)
+        if self._cfg_file_path.exists():
+            self._cfg_file_path.unlink()
 
         if self._remove_handler is not None:
             self._remove_handler(None)
@@ -201,7 +199,7 @@ class Devices:
         :return: True if the configuration could be saved.
         """
         try:
-            with open(self._cfg_file_path, "w+", encoding="utf-8") as f:
+            with self._cfg_file_path.open("w+", encoding="utf-8") as f:
                 json.dump(self._config, f, ensure_ascii=False, cls=_EnhancedJSONEncoder)
             return True
         except OSError:
@@ -250,7 +248,7 @@ class Devices:
                 if not found and self._remove_handler is not None:
                     self._remove_handler(old_device)
 
-            with open(self._cfg_file_path, "w+", encoding="utf-8") as f:
+            with self._cfg_file_path.open("w+", encoding="utf-8") as f:
                 json.dump(self._config, f, ensure_ascii=False, cls=_EnhancedJSONEncoder)
             return True
         # pylint: disable = W0718
@@ -263,8 +261,8 @@ class Devices:
                 self._config = config_backup
                 self.store()
             # pylint: disable = W0718
-            except Exception:
-                pass
+            except Exception as restore_error:
+                _LOG.warning("Cannot restore the previous configuration: %s", restore_error)
         return False
 
     def load(self) -> bool:
@@ -273,7 +271,7 @@ class Devices:
         :return: True if the configuration could be loaded.
         """
         try:
-            with open(self._cfg_file_path, "r", encoding="utf-8") as f:
+            with self._cfg_file_path.open(encoding="utf-8") as f:
                 data = json.load(f)
             for item in data:
                 # not using AtvDevice(**item) to be able to migrate old configuration files with missing attributes
@@ -321,9 +319,6 @@ class Devices:
         interface_info = await device.get_interface_information()
         system_info = await device.get_system_info()
 
-        assert device
-        assert system_info
-
         unique_id = system_info.serialNumber
         if unique_id is None:
             unique_id = system_info.macAddr
@@ -342,7 +337,7 @@ class Devices:
 
     async def handle_address_change(self):
         """Check for address change and update configuration."""
-        if devices.empty():
+        if self.empty():
             return
         if self._config_lock.locked():
             _LOG.debug("Check device change already in progress")
@@ -358,21 +353,27 @@ class Devices:
             try:
                 _discovered_configs.append(await Devices.extract_device_info(_discovered_device.endpoint))
             # pylint: disable = W0718
-            except Exception:
-                pass
+            except Exception as ex:
+                _LOG.debug("Cannot inspect discovered receiver %s: %s", _discovered_device.endpoint, ex)
 
-        for device_config in devices.all():
+        for device_config in self.all():
             found = False
             for device in _discovered_configs:
-                if device_config.mac_address_wifi and device_config.mac_address_wifi in [
-                    device.mac_address_wired,
-                    device.mac_address_wifi,
-                ]:
-                    found = True
-                elif device_config.mac_address_wired and device_config.mac_address_wired in [
-                    device.mac_address_wired,
-                    device.mac_address_wifi,
-                ]:
+                if (
+                    device_config.mac_address_wifi
+                    and device_config.mac_address_wifi
+                    in [
+                        device.mac_address_wired,
+                        device.mac_address_wifi,
+                    ]
+                ) or (
+                    device_config.mac_address_wired
+                    and device_config.mac_address_wired
+                    in [
+                        device.mac_address_wired,
+                        device.mac_address_wifi,
+                    ]
+                ):
                     found = True
 
                 if found:
@@ -402,4 +403,4 @@ class Devices:
         self._config_lock.release()
 
 
-devices: Devices | None = None  # pylint: disable=C0103
+devices: Devices

@@ -8,10 +8,10 @@ Media-player entity functions.
 import logging
 from typing import Any
 
-import ucapi.media_player
 from ucapi import EntityTypes, Sensor
+import ucapi.media_player
 from ucapi.media_player import States as MediaStates
-from ucapi.sensor import Attributes, DeviceClasses, Options, States
+from ucapi.sensor import Attributes, DeviceClasses, States
 
 import avr
 from config import DeviceInstance, SonyEntity, create_entity_id
@@ -40,7 +40,7 @@ class SonySensor(SonyEntity, Sensor):
         name: str | dict[str, str],
         device_config: DeviceInstance,
         device: avr.SonyDevice,
-        options: dict[Options, Any] | None = None,
+        options: dict[str, Any] | None = None,
         device_class: DeviceClasses = DeviceClasses.CUSTOM,
     ) -> None:
         """Initialize the class."""
@@ -57,9 +57,9 @@ class SonySensor(SonyEntity, Sensor):
         """Return the device identifier."""
         return self._device_config.id
 
-    def update_attributes(self, update: dict[str, Any] | None = None) -> dict[str, Any]:
+    def update_attributes(self, update: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """Return the updated attributes of current sensor entity."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 class SonySensorVolume(SonySensor):

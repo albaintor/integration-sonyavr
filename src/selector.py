@@ -5,11 +5,11 @@ Select entity functions.
 :license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
+from collections.abc import Awaitable, Callable
 import logging
 from typing import Any
 
 from ucapi import EntityTypes, Select, StatusCodes
-from ucapi.api_definitions import CommandHandler
 from ucapi.select import Attributes, Commands, States
 
 import avr
@@ -17,6 +17,8 @@ from config import DeviceInstance, SonyEntity, create_entity_id
 from const import SonySelects
 
 _LOG = logging.getLogger(__name__)
+
+SelectHandler = Callable[[str | None], Awaitable[StatusCodes]]
 
 
 # pylint: disable=W1405,R0801
@@ -33,7 +35,7 @@ class SonySelect(SonyEntity, Select):
         name: str | dict[str, str],
         device_config: DeviceInstance,
         device: avr.SonyDevice,
-        select_handler: CommandHandler,
+        select_handler: SelectHandler,
     ):
         """Initialize the class."""
         # pylint: disable = R0801
@@ -41,7 +43,7 @@ class SonySelect(SonyEntity, Select):
         self._device_config = device_config
         self._device: avr.SonyDevice = device
         self._state: States = States.ON
-        self._select_handler: CommandHandler = select_handler
+        self._select_handler = select_handler
         super().__init__(
             identifier=entity_id,
             name=name,
@@ -56,12 +58,12 @@ class SonySelect(SonyEntity, Select):
     @property
     def current_option(self) -> str:
         """Return select value."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
     @property
     def select_options(self) -> list[str]:
         """Return selection list."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def update_attributes(self, update: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """Return updated selector value from full update if provided or sensor value if no udpate is provided."""
@@ -98,6 +100,8 @@ class SonySelect(SonyEntity, Select):
                           callbacks instead of broadcasts.
         :return: command status code to acknowledge to UCR2
         """
+        del websocket
+        params = params or {}
         # pylint: disable=R0911
         if cmd_id == Commands.SELECT_OPTION and params:
             option = params.get("option", None)
@@ -170,7 +174,7 @@ class SonyInputSourceSelect(SonySelect):
     @property
     def current_option(self) -> str:
         """Return selector value."""
-        return self._device.source if self._device.source else ""
+        return self._device.source or ""
 
     @property
     def select_options(self) -> list[str]:

@@ -7,22 +7,23 @@ This module implements a Remote Two integration driver for Sony AVR receivers.
 """
 
 import asyncio
+from collections.abc import Coroutine
+from enum import Enum
 import logging
 import os
 import sys
-from enum import Enum
-from typing import Any, Type
+from typing import Any
 
 # sys.path.insert(0, os.path.abspath("../integration-python-library"))
 import ucapi
 
 import avr
 import config
+from config import SonyEntity
 import media_player
 import selector
 import sensor
 import setup_flow
-from config import SonyEntity
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
 if sys.platform == "win32":
@@ -35,6 +36,14 @@ api = ucapi.IntegrationAPI(_LOOP)
 # Map of avr_id -> SonyAVR instance
 _configured_devices: dict[str, avr.SonyDevice] = {}
 _remote_in_standby = False  # pylint: disable=C0103
+_background_tasks: set[asyncio.Task[Any]] = set()
+
+
+def _create_task(coroutine: Coroutine[Any, Any, Any]) -> None:
+    """Schedule a task and retain it until completion."""
+    task = _LOOP.create_task(coroutine)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 @api.listens_to(ucapi.Events.CONNECT)
@@ -81,7 +90,7 @@ async def on_enter_standby() -> None:
         await configured.disconnect()
 
 
-def filter_attributes(attributes, attribute_type: Type[Enum]) -> dict[str, Any]:
+def filter_attributes(attributes, attribute_type: type[Enum]) -> dict[str, Any]:
     """Filter attributes based on an Enum class."""
     valid_keys = {e.value for e in attribute_type}
     return {k: v for k, v in attributes.items() if k in valid_keys}
@@ -124,7 +133,10 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
     _remote_in_standby = False
     _LOG.debug("Subscribe entities event: %s", entity_ids)
     for entity_id in entity_ids:
-        entity: SonyEntity | None = api.configured_entities.get(entity_id)
+        entity = api.configured_entities.get(entity_id)
+        if not isinstance(entity, SonyEntity):
+            _LOG.warning("Failed to subscribe unknown entity %s", entity_id)
+            continue
         device_id = entity.deviceid
         if device_id in _configured_devices:
             device = _configured_devices[device_id]
@@ -132,10 +144,10 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
                 api.configured_entities.update_attributes(
                     entity_id, filter_attributes(device.attributes, ucapi.media_player.Attributes)
                 )
-            elif isinstance(entity, sensor.SonySensor):
-                api.configured_entities.update_attributes(entity_id, entity.update_attributes())
-            elif isinstance(entity, selector.SonySelect):
-                api.configured_entities.update_attributes(entity_id, entity.update_attributes())
+            elif isinstance(entity, (sensor.SonySensor, selector.SonySelect)):
+                attributes = entity.update_attributes()
+                if attributes:
+                    api.configured_entities.update_attributes(entity_id, attributes)
             continue
 
         device = config.devices.get(device_id)
@@ -151,7 +163,9 @@ async def on_unsubscribe_entities(entity_ids: list[str]) -> None:
     _LOG.debug("Unsubscribe entities event: %s", entity_ids)
     devices_to_remove = set()
     for entity_id in entity_ids:
-        entity: SonyEntity | None = api.configured_entities.get(entity_id)
+        entity = api.configured_entities.get(entity_id)
+        if not isinstance(entity, SonyEntity):
+            continue
         device_id = entity.deviceid
         if device_id is None:
             continue
@@ -162,12 +176,13 @@ async def on_unsubscribe_entities(entity_ids: list[str]) -> None:
         entity_id = entity_entry.get("entity_id", "")
         if entity_id in entity_ids:
             continue
-        entity: SonyEntity | None = api.configured_entities.get(entity_id)
+        entity = api.configured_entities.get(entity_id)
+        if not isinstance(entity, SonyEntity):
+            continue
         device_id = entity.deviceid
         if device_id is None:
             continue
-        if device_id in devices_to_remove:
-            devices_to_remove.remove(device_id)
+        devices_to_remove.discard(device_id)
 
     for device_id in devices_to_remove:
         if device_id in _configured_devices:
@@ -273,9 +288,7 @@ async def on_device_update(device_id: str, update: dict[str, Any] | None) -> Non
     for configured_entity in _get_entities(device_id):
         if isinstance(configured_entity, media_player.SonyMediaPlayer):
             attributes = configured_entity.filter_changed_attributes(update)
-        elif isinstance(configured_entity, sensor.SonySensor):
-            attributes = configured_entity.update_attributes(update)
-        elif isinstance(configured_entity, selector.SonySelect):
+        elif isinstance(configured_entity, (sensor.SonySensor, selector.SonySelect)):
             attributes = configured_entity.update_attributes(update)
 
         if attributes:
@@ -283,7 +296,7 @@ async def on_device_update(device_id: str, update: dict[str, Any] | None) -> Non
             api.configured_entities.update_attributes(configured_entity.id, attributes)
 
 
-def _get_entities(device_id: str, include_all=False) -> list[SonyEntity]:
+def _get_entities(device_id: str, *, include_all: bool = False) -> list[SonyEntity]:
     """
     Return all associated entities of the given AVR.
 
@@ -293,21 +306,21 @@ def _get_entities(device_id: str, include_all=False) -> list[SonyEntity]:
     """
     entities = []
     for entity_entry in api.configured_entities.get_all():
-        entity: SonyEntity | None = api.configured_entities.get(entity_entry.get("entity_id", ""))
-        if entity is None or entity.deviceid != device_id:
+        entity = api.configured_entities.get(entity_entry.get("entity_id", ""))
+        if not isinstance(entity, SonyEntity) or entity.deviceid != device_id:
             continue
         entities.append(entity)
     if not include_all:
         return entities
     for entity_entry in api.available_entities.get_all():
-        entity: SonyEntity | None = api.available_entities.get(entity_entry.get("entity_id", ""))
-        if entity is None or entity.deviceid != device_id:
+        entity = api.available_entities.get(entity_entry.get("entity_id", ""))
+        if not isinstance(entity, SonyEntity) or entity.deviceid != device_id:
             continue
         entities.append(entity)
     return entities
 
 
-def _configure_new_device(device: config.DeviceInstance, connect: bool = True) -> None:
+def _configure_new_device(device: config.DeviceInstance, *, connect: bool = True) -> None:
     """
     Create and configure a new AVR device.
 
@@ -319,7 +332,7 @@ def _configure_new_device(device: config.DeviceInstance, connect: bool = True) -
     # the device should not yet be configured, but better be safe
     if device.id in _configured_devices:
         receiver = _configured_devices[device.id]
-        _LOOP.create_task(receiver.disconnect())
+        _create_task(receiver.disconnect())
     else:
         receiver = avr.SonyDevice(device, loop=_LOOP)
 
@@ -333,7 +346,7 @@ def _configure_new_device(device: config.DeviceInstance, connect: bool = True) -
 
     if connect:
         # start background connection task
-        _LOOP.create_task(receiver.connect())
+        _create_task(receiver.connect())
 
     _register_available_entities(device, receiver)
 
@@ -383,18 +396,17 @@ def on_device_removed(device: config.DeviceInstance | None) -> None:
     if device is None:
         _LOG.debug("Configuration cleared, disconnecting & removing all configured AVR instances")
         for configured in _configured_devices.values():
-            _LOOP.create_task(_async_remove(configured))
+            _create_task(_async_remove(configured))
         _configured_devices.clear()
         api.configured_entities.clear()
         api.available_entities.clear()
-    else:
-        if device.id in _configured_devices:
-            _LOG.debug("Disconnecting from removed AVR %s", device.id)
-            configured = _configured_devices.pop(device.id)
-            _LOOP.create_task(_async_remove(configured))
-            for entity in _get_entities(configured.id):
-                api.configured_entities.remove(entity.id)
-                api.available_entities.remove(entity.id)
+    elif device.id in _configured_devices:
+        _LOG.debug("Disconnecting from removed AVR %s", device.id)
+        configured = _configured_devices.pop(device.id)
+        _create_task(_async_remove(configured))
+        for entity in _get_entities(configured.id):
+            api.configured_entities.remove(entity.id)
+            api.available_entities.remove(entity.id)
 
 
 async def _async_remove(receiver: avr.SonyDevice) -> None:
@@ -420,7 +432,7 @@ async def main():
     for device in config.devices.all():
         _configure_new_device(device, connect=False)
 
-    _LOOP.create_task(config.devices.handle_address_change())
+    _create_task(config.devices.handle_address_change())
 
     # _LOOP.create_task(receiver_status_poller())
     for receiver in _configured_devices.values():

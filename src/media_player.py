@@ -9,14 +9,7 @@ import logging
 from typing import Any
 
 from ucapi import EntityTypes, MediaPlayer, StatusCodes
-from ucapi.media_player import (
-    Attributes,
-    Commands,
-    DeviceClasses,
-    Features,
-    Options,
-    States,
-)
+from ucapi.media_player import Attributes, Commands, DeviceClasses, Features, Options, States
 
 import avr
 from config import DeviceInstance, SonyEntity, create_entity_id
@@ -88,11 +81,13 @@ class SonyMediaPlayer(MediaPlayer, SonyEntity):
                           callbacks instead of broadcasts.
         :return: command status code to acknowledge to UCR2
         """
+        del websocket
         _LOG.info("Got %s command request: %s %s", self.id, cmd_id, params)
 
         if self._receiver is None:
             _LOG.warning("No AVR instance for entity: %s", self.id)
             return StatusCodes.SERVICE_UNAVAILABLE
+        params = params or {}
         res: StatusCodes = StatusCodes.NOT_IMPLEMENTED
         if cmd_id == Commands.VOLUME:
             res = await self._receiver.set_volume_level(params.get("volume"))
@@ -116,7 +111,7 @@ class SonyMediaPlayer(MediaPlayer, SonyEntity):
             res = await self._receiver.previous()
         elif cmd_id == Commands.PLAY_PAUSE:
             res = await self._receiver.play_pause()
-        elif cmd_id in self.options[Options.SIMPLE_COMMANDS]:
+        elif cmd_id in (self.options or {}).get(Options.SIMPLE_COMMANDS, []):
             if cmd_id == "ZONE_HDMI_OUTPUT_AB":
                 res = await self._receiver.set_sound_settings("hdmiOutput", "hdmi_AB")
             elif cmd_id == "ZONE_HDMI_OUTPUT_A":
@@ -156,27 +151,30 @@ class SonyMediaPlayer(MediaPlayer, SonyEntity):
             if attr in update:
                 attributes = self._key_update_helper(attr, update[attr], attributes)
 
-        if Attributes.SOURCE_LIST in update:
-            if Attributes.SOURCE_LIST in self.attributes:
-                if update[Attributes.SOURCE_LIST] != self.attributes[Attributes.SOURCE_LIST]:
-                    attributes[Attributes.SOURCE_LIST] = update[Attributes.SOURCE_LIST]
+        if (
+            Attributes.SOURCE_LIST in update
+            and Attributes.SOURCE_LIST in self.attributes
+            and update[Attributes.SOURCE_LIST] != self.attributes[Attributes.SOURCE_LIST]
+        ):
+            attributes[Attributes.SOURCE_LIST] = update[Attributes.SOURCE_LIST]
 
         if Features.SELECT_SOUND_MODE in self.features:
             if Attributes.SOUND_MODE in update:
                 attributes = self._key_update_helper(Attributes.SOUND_MODE, update[Attributes.SOUND_MODE], attributes)
-            if Attributes.SOUND_MODE_LIST in update:
-                if Attributes.SOUND_MODE_LIST in self.attributes:
-                    if update[Attributes.SOUND_MODE_LIST] != self.attributes[Attributes.SOUND_MODE_LIST]:
-                        attributes[Attributes.SOUND_MODE_LIST] = update[Attributes.SOUND_MODE_LIST]
+            if (
+                Attributes.SOUND_MODE_LIST in update
+                and Attributes.SOUND_MODE_LIST in self.attributes
+                and update[Attributes.SOUND_MODE_LIST] != self.attributes[Attributes.SOUND_MODE_LIST]
+            ):
+                attributes[Attributes.SOUND_MODE_LIST] = update[Attributes.SOUND_MODE_LIST]
 
-        if Attributes.STATE in attributes:
-            if attributes[Attributes.STATE] == States.OFF:
-                attributes[Attributes.MEDIA_IMAGE_URL] = ""
-                attributes[Attributes.MEDIA_ALBUM] = ""
-                attributes[Attributes.MEDIA_ARTIST] = ""
-                attributes[Attributes.MEDIA_TITLE] = ""
-                attributes[Attributes.MEDIA_TYPE] = ""
-                attributes[Attributes.SOURCE] = ""
+        if Attributes.STATE in attributes and attributes[Attributes.STATE] == States.OFF:
+            attributes[Attributes.MEDIA_IMAGE_URL] = ""
+            attributes[Attributes.MEDIA_ALBUM] = ""
+            attributes[Attributes.MEDIA_ARTIST] = ""
+            attributes[Attributes.MEDIA_TITLE] = ""
+            attributes[Attributes.MEDIA_TYPE] = ""
+            attributes[Attributes.SOURCE] = ""
 
         return attributes
 

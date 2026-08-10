@@ -32,11 +32,10 @@ content-type = "text/markdown; charset=UTF-8"
 
 [project.optional-dependencies]
 testing = [
-    "pylint",
-    "flake8-docstrings",
-    "flake8",
-    "black",
-    "isort",
+    "ruff==0.15.21",
+    "pyright==1.1.411",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
 ]
 
 [tool.setuptools]
@@ -48,5 +47,111 @@ include-package-data = false
 exclude = ["tests"]
 namespaces = false
 
-[tool.isort]
-profile = "black"
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src", "tests"]
+extend-exclude = ["build", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle
+    "F",      # pyflakes
+    "B",      # bugbear
+    "I",      # isort
+    "PL",     # pylint
+    "UP",     # pyupgrade
+    "SIM",    # simplify
+    "ASYNC",  # async rules
+    "S",      # security
+    "C4",     # comprehensions
+    "RUF",    # ruff-specific
+    "TRY",    # tryceratops
+    "PERF",   # perflint
+    "DTZ",    # datetimez
+    "PTH",    # pathlib
+    "RET",    # return rules
+    "G",      # logging-format
+    "LOG",    # logging
+    "PIE",    # flake8-pie
+    "A",      # builtins
+    "ARG",    # unused arguments
+    "BLE",    # blind except
+    "ISC",    # implicit string concat
+    "FLY",    # flynt
+    "FURB",   # refurb
+    "RSE",    # raise rules
+    "T20",    # print
+    "INP",    # namespace packages
+    "TCH",    # type-checking
+    "EM",     # errmsg
+    "SLF",    # self-access
+    "TID",    # tidy imports
+    "FBT",    # boolean trap
+]
+
+ignore = [
+    "ISC003",  # conflicts with pyright reportImplicitStringConcatenation
+    "PLR0911", # too-many-return-statements
+    "PLR0912", # too-many-branches
+    "PLR2004", # magic-value-comparison (noisy)
+    "PLW0603", # global-statement
+    "TRY300",  # try-consider-else
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # assert is the pytest idiom
+    "PLC0415", # local imports are intentional in tests (e.g. purity checks)
+    "INP001",  # tests are not a package
+]
+"src/avr.py" = [
+    "ASYNC109", # timeout controls reconnect waiting; asyncio.timeout is already used
+    "BLE001",   # device-library boundaries must convert unexpected failures to driver states
+    "FBT001",   # command handlers are called positionally by ucapi
+    "PLR0915",  # connection and notification handlers follow the device protocol sequence
+    "SLF001",   # retry decorators intentionally coordinate SonyDevice internals
+]
+"src/config.py" = [
+    "BLE001", # config import rollback and discovery isolate malformed external data
+]
+"src/discover.py" = [
+    "BLE001", # discovery must return an empty result for third-party library failures
+]
+"src/driver.py" = [
+    "SLF001", # ucapi client state is required to distinguish the last disconnect
+]
+"src/sensor.py" = [
+    "PLR0913", # entity construction mirrors the ucapi Sensor constructor
+]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+combine-as-imports = true
+split-on-trailing-comma = false
+known-first-party = []
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"pytz".msg = "use datetime.timezone instead"
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+
+[tool.ruff.lint.mccabe]
+max-complexity = 25
+
+[tool.ruff.format]
+line-ending = "auto"
+quote-style = "double"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"

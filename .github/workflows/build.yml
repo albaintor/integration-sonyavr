@@ -1,37 +1,50 @@
-# GitHub Action to build a self-contained binary of the Android TV Python driver
+# GitHub Action to build a self-contained binary of the Sony AVR Python driver
 ---
 name: "Build & Release"
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    # only build on pushes to main
+    branches:
+      - main
     tags:
       - v[0-9]+.[0-9]+.[0-9]+*
   pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
+    branches:
+      - main
+    types: [ opened, synchronize, reopened ]
+
+# prevent concurrent runs of this workflow for open pull requests
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   INTG_NAME: sonyavr
-  HASH_FILENAME: uc-src.hash
+  HASH_FILENAME: uc-intg-sonyavr.hash
+  BUILD_CHANGELOG: build-changelog.md
   # Python version to use in the builder image. See https://hub.docker.com/r/unfoldedcircle/r2-pyinstaller for possible versions.
-  PYTHON_VER: 3.11.13-0.4.0
+  PYTHON_VER: 3.11.13-0.7.0
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           # History of 200 should be more than enough to calculate commit count since last release tag.
           fetch-depth: 200
+          persist-credentials: false
 
       - name: Fetch all tags to determine version
         run: |
           git fetch origin +refs/tags/*:refs/tags/*
-          echo VERSION="v$(jq .version -r driver.json)" >> $GITHUB_ENV
-        # echo "VERSION=$(git describe --match "v[0-9]*" --tags HEAD --always)" >> $GITHUB_ENV
+          echo "VERSION=$(git describe --match "v[0-9]*" --tags HEAD --always)" >> $GITHUB_ENV
 
       - name: Verify driver.json version for release build
         if: contains(github.ref, 'tags/v')
@@ -42,13 +55,11 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare
+      - name: Pyinstaller
         run: |
-          sudo apt-get update && sudo apt-get install -y qemu binfmt-support qemu-user-static
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
           echo "Starting pyinstaller build"
           docker run --rm --name builder \
-            --platform=aarch64 \
+            --platform=linux/arm64/v8 \
             --user=$(id -u):$(id -g) \
             -v ${GITHUB_WORKSPACE}:/workspace \
             docker.io/unfoldedcircle/r2-pyinstaller:${PYTHON_VER} \
@@ -59,43 +70,71 @@ jobs:
 
       - name: Add version
         run: |
-          DRIVER_VERSION="v$(jq .version -r driver.json)"
           mkdir -p artifacts/bin
           cd artifacts
-          # echo ${{ env.VERSION }} > version.txt
-          echo $DRIVER_VERSION > version.txt
-          
+          echo ${{ env.VERSION }} > version.txt
+
       - name: Prepare artifacts
         shell: bash
         run: |
           cp -r dist/driver/* artifacts/bin
           cp driver.json artifacts/
           cp sony.png artifacts/
+          cp LICENSE artifacts/
           echo "ARTIFACT_NAME=uc-intg-${{ env.INTG_NAME }}-${{ env.VERSION }}-aarch64" >> $GITHUB_ENV
-          
+
       - name: Create upload artifact
         shell: bash
-        run: | 
+        run: |
           tar czvf ${{ env.ARTIFACT_NAME }}.tar.gz -C ${GITHUB_WORKSPACE}/artifacts .
           ls -lah
-          
-      - uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
         id: upload_artifact
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_NAME }}.tar.gz
           if-no-files-found: error
           retention-days: 3
-            
+
+  changelog:
+    name: Create changelog
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v7.0.0
+        with:
+          node-version: "lts/*"
+
+      - name: "Create Changelog"
+        run: |
+          npm install -g conventional-changelog-cli
+          conventional-changelog -p conventionalcommits -u -o ${{ env.BUILD_CHANGELOG }}
+          cat ${{ env.BUILD_CHANGELOG }}
+
+      - name: Upload changelog
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
+        with:
+          name: changelog
+          path: ${{ env.BUILD_CHANGELOG }}
+          if-no-files-found: error
+          retention-days: 3
+
   release:
     name: Create Release
     if: github.ref == 'refs/heads/main' || contains(github.ref, 'tags/v')
-    runs-on: ubuntu-22.04
-    needs: [build]
+    runs-on: ubuntu-24.04
+    needs: [ build, changelog ]
 
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #v8.0.1
 
       - name: Extract build archives from downloaded files
         run: |
@@ -121,14 +160,32 @@ jobs:
           for filename in *.tar.gz; do mv $filename "$(basename $filename .tar.gz)-${{ env.TIMESTAMP }}.tar.gz"; done;
           for filename in *.tar.gz; do echo "sha256  `sha256sum $filename`" >> ${{ env.HASH_FILENAME }}; done;
 
+      # Checkout is required for the next `gh release delete` step
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          path: main
+          persist-credentials: false
+
+      # We have to delete the "latest" release, otherwise `softprops/action-gh-release` will only append the new artifact.
+      # This simulates the old marvinpinto/action-automatic-releases action.
+      - name: Remove previous pre-release
+        run: |
+          cd main
+          gh release delete latest --cleanup-tag -y || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # Use conventional commit changelog, and append the GitHub generated changelog
       - name: Create Pre-Release
-        uses: "marvinpinto/action-automatic-releases@latest"
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 #v3
         if: "!contains(github.ref, 'tags/v')"
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: "latest"
           prerelease: true
-          title: "Development Build"
+          tag_name: latest
+          body_path: ${{ env.BUILD_CHANGELOG }}
+          generate_release_notes: true
+          name: "Development Build"
           files: |
             *.tar.gz
             ${{ env.HASH_FILENAME }}
@@ -139,11 +196,11 @@ jobs:
           for filename in *.tar.gz; do echo "sha256  `sha256sum $filename`" >> ${{ env.HASH_FILENAME }}; done;
 
       - name: Create Release
-        uses: "marvinpinto/action-automatic-releases@latest"
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 #v3
         if: "contains(github.ref, 'tags/v')"
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
           prerelease: false
+          generate_release_notes: true
           files: |
             *.tar.gz
-            ${{ env.HASH_FILENAME }}            
+            ${{ env.HASH_FILENAME }}
