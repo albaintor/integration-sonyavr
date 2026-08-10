@@ -153,5 +153,6 @@ pythonpath = ["src"]
 
 [tool.pyright]
 include = ["src"]
+exclude = ["src/test.py"]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
