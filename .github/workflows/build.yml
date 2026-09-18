@@ -204,36 +204,3 @@ jobs:
           files: |
             *.tar.gz
             ${{ env.HASH_FILENAME }}
-
-      - name: Prepare clean v1.8.0 release asset
-        if: "github.ref == 'refs/heads/main' && github.event.head_commit.message == 'chore: republish v1.8.0'"
-        run: |
-          for filename in uc-intg-sonyavr-*.tar.gz; do
-            mv "$filename" "uc-intg-sonyavr-v1.8.0-aarch64-${{ env.TIMESTAMP }}.tar.gz"
-          done
-          rm -f ${{ env.HASH_FILENAME }}
-          for filename in *.tar.gz; do echo "sha256  `sha256sum $filename`" >> ${{ env.HASH_FILENAME }}; done
-
-      - name: Remove existing v1.8.0 release assets
-        if: "github.ref == 'refs/heads/main' && github.event.head_commit.message == 'chore: republish v1.8.0'"
-        run: |
-          gh release view v1.8.0 --repo albaintor/integration-sonyavr --json assets --jq '.assets[].name' | while read asset; do
-            gh release delete-asset v1.8.0 "$asset" --repo albaintor/integration-sonyavr -y
-          done
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Republish clean v1.8.0 release
-        if: "github.ref == 'refs/heads/main' && github.event.head_commit.message == 'chore: republish v1.8.0'"
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.8.0
-          target_commitish: main
-          name: Release v1.8.0
-          prerelease: false
-          generate_release_notes: true
-          files: |
-            *.tar.gz
-            ${{ env.HASH_FILENAME }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
