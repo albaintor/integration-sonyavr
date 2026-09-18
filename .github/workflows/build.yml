@@ -204,26 +204,3 @@ jobs:
           files: |
             *.tar.gz
             ${{ env.HASH_FILENAME }}
-
-      - name: Remove incorrectly named v1.8.0 release assets
-        if: "github.ref == 'refs/heads/main' && github.event.head_commit.message == 'chore: release v1.8.0'"
-        run: |
-          gh release delete-asset v1.8.0 uc-intg-sonyavr-v1.7.6-3-g57151e2-aarch64-20260918_114605.tar.gz -y || true
-          gh release delete-asset v1.8.0 uc-intg-sonyavr.hash -y || true
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Publish requested version release
-        if: "github.ref == 'refs/heads/main' && github.event.head_commit.message == 'chore: release v1.8.0'"
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.8.0
-          target_commitish: main
-          name: Release v1.8.0
-          prerelease: false
-          generate_release_notes: true
-          files: |
-            *.tar.gz
-            uc-intg-sonyavr.hash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
